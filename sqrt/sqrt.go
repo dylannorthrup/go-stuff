@@ -1,3 +1,5 @@
+// Example to implement Newton's Approximation for sqrt calculation and compare
+// it to Math.sqrt
 package main
 
 import (
