@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
+	//"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -23,61 +23,46 @@ type Card struct {
 	Plat    int
 }
 
-type test_struct struct {
-	Test string
-}
-
 // And this is all our cards together
 type Collection []Card
 
 // FUNCTIONS
 
-//func test(rw http.ResponseWriter, req *http.Request) {
-//	decoder := json.NewDecoder(req.Body)
-//	var t test_struct
-//	err := decoder.Decode(&t)
-//	if err != nil {
-//		panic("AIEEE")
-//	}
-//	log.Println(t.Test)
-//}
-
-func test(rw http.ResponseWriter, req *http.Request) {
+func incoming(rw http.ResponseWriter, req *http.Request) {
 	body, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		panic("AIEEE")
 	}
-	log.Println(string(body))
-	var t test_struct
-	err = json.Unmarshal(body, &t)
+	fmt.Println(string(body))
+	//err = json.Unmarshal(body, &t)
+	var f interface{}
+	err = json.Unmarshal(body, &f)
 	if err != nil {
 		panic("AIEEE")
 	}
-	log.Println(t.Test)
-}
+	m := f.([]interface{})
+	for k, v := range m {
+		fmt.Printf("working on key %v with value %v\n", k, v)
+		switch vv := v.(type) {
+		case string:
+			fmt.Println(k, "is string", vv)
+		case int:
+			fmt.Println(k, "is int", vv)
+		case []interface{}:
+			fmt.Println(k, "is an array:")
+			for i, u := range vv {
+				fmt.Println(i, u)
+			}
+		default:
+			fmt.Println(k, "is of a type I don't know how to handle")
+		}
+	}
 
-/* func response(w http.ResponseWriter, r *http.Request) {
-	//	b := make([]byte, 4096)
-	//	n, err := r.Body.Read(b)
-	//	if err != nil {
-	//		fmt.Printf("Request body: %q\n", b[:n])
-	//	} else {
-	//		fmt.Print("Had a problem with r.Body.Read: %v\n", err)
-	//	}
-	w.Write([]byte("Responding\n"))
-	//fmt.Fprintf(os.Stdout, "Request body: %v\n", r.Body)
-} */
-
-// Now, let's implement 'ServeHTTP()' for them
-func (s String) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "STRING: %v\n", s)
 }
 
 func main() {
-	// your http.Handle calls here
 	// Register http handlers before starting the server
-	//	http.HandleFunc("/", response)
-	http.HandleFunc("/", test)
+	http.HandleFunc("/", incoming)
 	// Now that we've registered what we want, start it up
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }
