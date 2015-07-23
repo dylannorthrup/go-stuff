@@ -35,14 +35,13 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	}
 	fmt.Println(string(body))
 	//err = json.Unmarshal(body, &t)
-	var f interface{}
+	var f map[string]interface{}
 	err = json.Unmarshal(body, &f)
 	if err != nil {
 		panic("AIEEE: Could not Unmarshall the body")
 	}
 	fmt.Println("PROGRESS: Unmarshall successful")
-	m := f.([]interface{})
-	for k, v := range m {
+	for k, v := range f {
 		fmt.Printf("working on key %v with value %v\n", k, v)
 		switch vv := v.(type) {
 		case string:
