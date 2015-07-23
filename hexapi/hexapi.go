@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	//"io"
 	"io/ioutil"
 	"log"
@@ -46,15 +47,22 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 		switch vv := v.(type) {
 		case string:
 			fmt.Println(k, "is string", vv)
+		case float64:
+			fmt.Println(k, "is float64", vv)
 		case int:
 			fmt.Println(k, "is int", vv)
+		case map[string]interface{}:
+			fmt.Println(k, "is a map", vv)
+			for i, u := range vv {
+				fmt.Println("\t", i, u)
+			}
 		case []interface{}:
 			fmt.Println(k, "is an array:")
 			for i, u := range vv {
-				fmt.Println(i, u)
+				fmt.Println("\t", i, u)
 			}
 		default:
-			fmt.Println(k, "is of a type I don't know how to handle")
+			fmt.Println(k, "is of a type,", reflect.TypeOf(vv), ", I don't know how to handle: ", vv)
 		}
 	}
 
