@@ -31,15 +31,16 @@ type Collection []Card
 func incoming(rw http.ResponseWriter, req *http.Request) {
 	body, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		panic("AIEEE")
+		panic("AIEEE: Could not readAll for req.Body")
 	}
 	fmt.Println(string(body))
 	//err = json.Unmarshal(body, &t)
 	var f interface{}
 	err = json.Unmarshal(body, &f)
 	if err != nil {
-		panic("AIEEE")
+		panic("AIEEE: Could not Unmarshall the body")
 	}
+	fmt.Println("PROGRESS: Unmarshall successful")
 	m := f.([]interface{})
 	for k, v := range m {
 		fmt.Printf("working on key %v with value %v\n", k, v)
