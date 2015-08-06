@@ -48,10 +48,9 @@ type Card struct {
 // And this is all our cards together... we use uuid as a key
 var cardCollection map[string]Card = make(map[string]Card)
 
-type nameToUuidMap struct {
-	name string
-	uuid string
-}
+type nameToUUIDMap map[string]string
+
+var ntum nameToUUIDMap = make(nameToUUIDMap)
 
 type sortedCardCollection struct {
 	cc map[string]Card
@@ -70,56 +69,33 @@ var GameStartTime time.Time = time.Now()
 // FUNCTIONS
 
 func printCollection() {
-	// Make a sorted card collection
-	scc := sortedCardCollection{cardCollection, make([]string, len(cardCollection))}
-	// Populate the sorted card collection
-	n := 0
-	for _, c := range scc.cc {
-		scc.s[n] = c.name
-		n += 1
+	// Make map of names to uuids
+	for _, c := range cardCollection {
+		k := c.name
+		ntum[k] = c.uuid
 	}
-	//		name := c.name
-	//		uuid = c.uuid
-	//	}
-	//	sort.Strings(m)
-	//	for _, u := range c {
-	sort.Sort(scc)
-	for _, entry := range scc.cc {
+	// Make array of the keys of that map
+	nmk := make([]string, len(ntum))
+	// Populate that array
+	n := 0
+	for k, _ := range ntum {
+		nmk[n] = k
+		n++
+	}
+	sort.Strings(nmk)
+	for _, name := range nmk {
+		uuid := ntum[name]
+		entry := cardCollection[uuid]
 		if entry.qty > 0 {
 			printCardInfo(entry)
 		}
 	}
+	//	for _, entry := range cardCollection {
+	//		if entry.qty > 0 {
+	//			printCardInfo(entry)
+	//		}
+	//	}
 }
-
-/// BEGIN SORT STUFF
-func (scc sortedCardCollection) Len() int {
-	return len(scc.cc)
-}
-
-func (scc sortedCardCollection) Less(i, j int) bool {
-	a := scc.cc[scc.s[i]]
-	b := scc.cc[scc.s[j]]
-	return a.name > b.name
-}
-
-func (scc sortedCardCollection) Swap(i, j int) {
-	scc.s[i], scc.s[j] = scc.s[j], scc.s[i]
-}
-
-func sortedKeys(cc map[string]Card) []string {
-	scc := new(sortedCardCollection)
-	scc.cc = cc
-	scc.s = make([]string, len(cc))
-	i := 0
-	for key, _ := range cc {
-		scc.s[i] = key
-		i++
-	}
-	sort.Sort(scc)
-	return scc.s
-}
-
-/// END SORT STUFF
 
 func cardUpdatedEvent() {
 }
@@ -371,6 +347,8 @@ func getCardPriceInfo() {
 				// If it doesn't exist, create a new card with appropriate values and add it to the map
 				c := Card{name: name, uuid: uuid, plat: plat, gold: gold}
 				cardCollection[uuid] = c
+				// And update our name to uuid map
+				ntum[name] = uuid
 			}
 		}
 	}
