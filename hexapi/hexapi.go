@@ -9,8 +9,8 @@ package main
 //    + Logout
 //    + DraftPack
 //    - DraftCardPicked/DaraftCardPicked
-//    - GameStarted
-//    - GameEnded
+//    + GameStarted
+//    + GameEnded
 //    - PlayerUpdated
 //    - CardUpdated
 //  - Track pack data and indicate which cards were picked when packs wheel
@@ -116,6 +116,7 @@ func changeCardCount(uuid string, i int) {
 			return
 		}
 	}
+	// If not, go ahead and actually increment the card count.
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.qty += i
@@ -296,6 +297,10 @@ func logoutEvent(s string) {
 func playerUpdatedEvent() {
 }
 
+func saveDeckEvent(f map[string]interface{}) {
+	fmt.Println("In function of saveDeckEvent")
+}
+
 func incoming(rw http.ResponseWriter, req *http.Request) {
 	body, err := ioutil.ReadAll(req.Body)
 	if err != nil {
@@ -330,6 +335,9 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	case "GameStarted":
 		//		fmt.Printf("Got a Game Started message\n")
 		gameStartedEvent()
+	case "SaveDeck":
+		//		fmt.Printf("Got a Save Deckmessage\n")
+		saveDeckEvent(f)
 	case "Login":
 		//		fmt.Printf("Got a Login message\n")
 		if user, ok := f["User"].(string); ok {
@@ -345,7 +353,7 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 			logoutEvent("")
 		}
 	case "PlayerUpdated":
-		fmt.Printf("Got a Player Updated message\n")
+		//		fmt.Printf("Got a Player Updated message\n")
 		playerUpdatedEvent()
 	default:
 		fmt.Printf("Don't know how to handle message '%v'\n", msg)
