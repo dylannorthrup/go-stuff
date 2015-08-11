@@ -8,6 +8,8 @@ package main
 //    + Login
 //    + Logout
 //    + DraftPack
+// 		+ Collection
+// 		- SaveDeck
 //    - DraftCardPicked/DaraftCardPicked
 //    + GameStarted
 //    + GameEnded
@@ -35,7 +37,7 @@ import (
 	"time"
 )
 
-// The Cards we work with and all the info we need about them
+// Card The Cards we work with and all the info we need about them
 type Card struct {
 	name   string
 	uuid   string
@@ -46,11 +48,11 @@ type Card struct {
 }
 
 // And this is all our cards together... we use uuid as a key
-var cardCollection map[string]Card = make(map[string]Card)
+var cardCollection = make(map[string]Card)
 
 type nameToUUIDMap map[string]string
 
-var ntum nameToUUIDMap = make(nameToUUIDMap)
+var ntum = make(nameToUUIDMap)
 
 type sortedCardCollection struct {
 	cc map[string]Card
@@ -63,10 +65,12 @@ var scc sortedCardCollection
 var Config = make(map[string]string)
 
 // And some general variables we'll use to keep track of things
-var GameStartTime time.Time = time.Now()
-var packValue int = 0
-var packCost int = 0
-var draftCardsPicked map[string]int = make(map[string]int)
+var GameStartTime = time.Now()
+var packValue int
+var packCost int
+var draftCardsPicked = make(map[string]int)
+var collectionTimerPeriod = time.Second * time.Duration(20)
+var collectionCacheTimer *time.Timer
 
 // FUNCTIONS
 
@@ -81,7 +85,7 @@ func printCollection() {
 	nmk := make([]string, len(ntum))
 	// Populate that array
 	n := 0
-	for k, _ := range ntum {
+	for k := range ntum {
 		nmk[n] = k
 		n++
 	}
@@ -107,6 +111,13 @@ func incrementCardCount(uuid string) {
 }
 func decrementCardCount(uuid string) {
 	changeCardCount(uuid, -1)
+}
+func setCardCount(uuid string, i int) {
+	if _, ok := cardCollection[uuid]; ok {
+		c := cardCollection[uuid]
+		c.qty = 0
+		changeCardCount(uuid, i)
+	}
 }
 func changeCardCount(uuid string, i int) {
 	// Check to see if we've got an entry in draftCardsPicked we need to account for
@@ -148,14 +159,15 @@ func printCardInfo(c Card) {
 	s := getCardInfo(c)
 	fmt.Printf("%v\n", s)
 }
+
 func getCardInfo(c Card) string {
 	return fmt.Sprintf("'%v' [Qty: %v] - %vp and %vg", c.name, c.qty, c.plat, c.gold)
 }
 
 // Return the UUID from a big of JSON
 func getCardUUID(f map[string]interface{}) string {
-	uuid_map := f["Guid"].(map[string]interface{})
-	uuid := uuid_map["m_Guid"].(string)
+	uuidMap := f["Guid"].(map[string]interface{})
+	uuid := uuidMap["m_Guid"].(string)
 	return uuid
 }
 
@@ -205,7 +217,7 @@ func draftPackEvent(f map[string]interface{}) {
 	// Now that we've done the comparison, print out our ROI for the pack
 	if len(cards) == 1 {
 		packValue += worthMostPlat.plat
-		fmt.Println("Total pack value: %v and pack profit is %v", packValue, packValue-packCost)
+		fmt.Printf("Total pack value: %v and pack profit is %v\n", packValue, packValue-packCost)
 	}
 }
 
@@ -233,6 +245,58 @@ func mostPlat(c1, c2 Card) Card {
 	return c2
 }
 
+// Something we use to write out a cache of our collection
+func cacheCollection() {
+	// fmt.Println("Entered cacheCollection()")
+	// First thing we do is stop the timer
+	collectionCacheTimer.Stop()
+	// Open file. If it exists right now, remove that before creating a new one
+	cacheFile := Config["collection_file"]
+	if _, err := os.Stat(cacheFile); err == nil {
+		os.Remove(cacheFile)
+	}
+	f, err := os.Create(cacheFile)
+	if err != nil {
+		fmt.Printf("Could not create file %v for writing: %v\n", cacheFile, err)
+		return
+	}
+	// fmt.Printf("Opened file %v for writing\n", cacheFile)
+	// Defer our close
+	defer f.Close()
+
+	// Look through cards to write out key/value data
+	for k, v := range cardCollection {
+		if v.qty == 0 {
+			continue
+		}
+		line := fmt.Sprintf("%v : %v\n", k, v.qty)
+		f.WriteString(line)
+		// fmt.Printf(".")
+	}
+	f.Sync()
+	// fmt.Println("! Caching of collection is complete")
+}
+
+// Read in the info we cached up there.
+func readCollectionCache() {
+	cacheFile := Config["collection_file"]
+	in, _ := os.Open(cacheFile)
+	defer in.Close()
+	scanner := bufio.NewScanner(in)
+	scanner.Split(bufio.ScanLines)
+
+	re1, _ := regexp.Compile(`^(.*) : (\d+)$`)
+	for scanner.Scan() {
+		// Split on regex and stuff count information into cardCollection
+		text := scanner.Text()
+		result := re1.FindStringSubmatch(text)
+		uuid := result[1]
+		i, _ := strconv.Atoi(result[2])
+		setCardCount(uuid, i)
+		// fmt.Println(scanner.Text())
+	}
+}
+
 // Process Collection Event
 func collectionEvent(f map[string]interface{}) {
 	action := f["Action"]
@@ -258,6 +322,11 @@ func collectionEvent(f map[string]interface{}) {
 		uuid := getCardUUID(card)
 		decrementCardCount(uuid)
 	}
+	// Schedule our collectionCacheTimer to write out the collection to the cache file
+	// We do this because sometimes we'll get many, many, MANY updates at once. We want
+	// to bundle them all up to be done in one go.
+	//	ccPointer := cacheCollection()
+	collectionCacheTimer = time.AfterFunc(collectionTimerPeriod, cacheCollection)
 	// For DEBUGGING
 	//printCollection()
 }
@@ -428,17 +497,27 @@ func getCardPriceInfo() {
 	//    Card Name ... UUID ... Avg_price PLATINUM [# of Auctions] ... Avg_price GOLD [# of Auctions]
 	//  Example:
 	//    Adamanthain Scrivener ... d2222e6c-c8f8-4dad-b6dl-c0aacd3fc8f0 ...  4 PLATINUM [23 Auctions] ... 187 GOLD [231 Auctions]
-	fmt.Printf("Retrieving prices from %v\n", Config["price_url"])
-	resp, err := http.Get(Config["price_url"])
-	if err != nil {
-		fmt.Printf("Could not retrive information from price_url: '%v'. Encountered the following error: %v\n", Config["price_url"], err)
-		fmt.Printf("exiting since we kinda need that information\n")
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
+	var body []byte
+	var err error
+	if Config["local_price_file"] == "" {
+		fmt.Printf("Retrieving prices from %v\n", Config["price_url"])
+		resp, err := http.Get(Config["price_url"])
+		if err != nil {
+			fmt.Printf("Could not retrive information from price_url: '%v'. Encountered the following error: %v\n", Config["price_url"], err)
+			fmt.Printf("exiting since we kinda need that information\n")
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+		body, err = ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		fmt.Printf("Retrieving prices from %v\n", Config["local_price_file"])
+		body, err = ioutil.ReadFile(Config["local_price_file"])
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	s := string(body)
 	lines := strings.Split(s, "\n")
@@ -486,6 +565,8 @@ func main() {
 	//	fmt.Printf("Using the following configuration values\n\tPrice URL (price_url): '%v'\n\tCollection file (collection_file): '%v'\n\tAlternate Art/Promo List URL(aa_promo_url): '%v'\n", Config["price_url"], Config["collection_file"], Config["aa_promo_url"])
 	// Retrieve card price info
 	getCardPriceInfo()
+	// Read in our collection cache
+	readCollectionCache()
 	// Register http handlers before starting the server
 	http.HandleFunc("/", incoming)
 	// Now that we've registered what we want, start it up
