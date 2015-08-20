@@ -4,6 +4,8 @@ package main
 //  + Parse JSON into something I can do stuff with
 //  + Read in config values from a config file
 //  + Get price data from URL
+// 	- Profit and loss for draft packs
+// 	- Better sorting/comparisons for picking purposes when items are equal
 //  - Handle the following types of events
 //    + Login
 //    + Logout
@@ -68,9 +70,25 @@ var Config = make(map[string]string)
 var GameStartTime = time.Now()
 var packValue int
 var packCost int
+var sessionProfit int
+var cardsInPack int
+
+// var packContents = make([][]string)
 var draftCardsPicked = make(map[string]int)
 var collectionTimerPeriod = time.Second * time.Duration(20)
 var collectionCacheTimer *time.Timer
+var cardCollectionMap = map[string]string{
+	"0":   "Champion",
+	"1":   "Deck",
+	"2":   "Hand",
+	"4":   "Opposing Champion",
+	"8":   "Play",
+	"16":  "Discard",
+	"32":  "ZONE 32",
+	"64":  "Shard",
+	"128": "Chain",
+	"256": "Tunnelled",
+}
 
 // FUNCTIONS
 
@@ -101,8 +119,60 @@ func printCollection() {
 	}
 }
 
+// Guesses about CardUpdated flags importance
+// Collection is a power of 2 map. They refer to different "zones". Here's what I think they
+// correspond to:
+//	0 - Champion
+//	1 - Deck
+//	2 - Hand
+//	4 - Opposing Champion
+//	8 - In Play (battle zone)
+//	16 - Discard Pile
+//	32 - ?????
+//	64 - Shard Zone (where shards go when they're played)
+//	128 - The Chain
+//	256 - Tunnelled
+//
+// State
+//	8192 - Ready
+//	16384 - Ready on opponent's turn?
+//	16517 - Exhausted
+//	16513 - Exhausted on opponent's turn?
 func cardUpdatedEvent(f map[string]interface{}) {
-	fmt.Printf("CardUpdatedEvent: %v\n", f)
+	/* DEBUGGING TO LEARN WHAT'S UP WITH THE FLAGS
+	keys := []string{}
+	for k := range f {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if strings.Contains(k, "Abilities") ||
+			strings.Contains(k, "BaseTemplate") ||
+			strings.Contains(k, "Message") ||
+			strings.Contains(k, "User") {
+			// fmt.Println("\nSKIPPING Abilities section")
+			continue
+		}
+		fmt.Printf("%v: %v - ", k, f[k])
+	}
+	fmt.Println("")
+	/*	END DEBUGGING TO LEARN WHAT'S UP WITH THE FLAGS */
+	name := f["Name"].(string)
+	if name == "" {
+		return
+	}
+	stats := fmt.Sprintf("[(%v/%v) for %v]", f["Attack"], f["Defense"], f["Cost"])
+	collection := fmt.Sprintf("%v", f["Collection"])
+	if collection == "8" || collection == "16" || collection == "256" {
+		return
+	}
+	fmt.Printf("In %v Zone:\t'%v' %v\n", cardCollectionMap[collection], name, stats)
+	// shards, _ := f["Shards"].(int)
+	// attrs, _ := f["Attributes"].(int)
+	// collection, _ := f["Collection"].(int)
+	// state, _ := f["State"].(int)
+	// fmt.Printf("CardUpdatedEvent: '%v' state: %v, shards: %v, attrs: %v, collection: %v\n", name, state, shards, attrs, collection)
+	// fmt.Printf(" - %v\n", f)
 }
 
 // Modify card quantities
@@ -131,7 +201,7 @@ func changeCardCount(uuid string, i int) {
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.qty += i
-		fmt.Printf("New qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
+		// fmt.Printf("New qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
 		cardCollection[uuid] = c
 	}
 }
@@ -179,6 +249,8 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	uuid := getCardUUID(card)
 	incrementCardCount(uuid)
 	incrementDraftCardsPicked(uuid)
+	c := cardCollection[uuid]
+	packValue += c.plat
 }
 
 // Process draft pack choices
@@ -187,9 +259,12 @@ func draftPackEvent(f map[string]interface{}) {
 	worthMostGold := Card{name: "bogusvalue"}
 	worthMostPlat := Card{name: "bogusvalue"}
 	cards, _ := f["Cards"].([]interface{})
-	if len(cards) == 15 {
+	numCards := len(cards)
+	if numCards == 15 {
 		packValue = 0
 	}
+	// If we have 9 or more cards in pack, save what we've got so we've got so we can determine what others picked
+	// Do some computations to figure out the optimal picks for plat, gold and filling out our collection
 	for _, u := range cards {
 		card := u.(map[string]interface{})
 		uuid := getCardUUID(card)
@@ -207,17 +282,21 @@ func draftPackEvent(f map[string]interface{}) {
 		haveLeastOf = leastQty(haveLeastOf, c)
 		worthMostGold = mostGold(worthMostGold, c)
 		worthMostPlat = mostPlat(worthMostPlat, c)
+
 	}
 	mostGold := getCardInfo(worthMostGold)
 	mostPlat := getCardInfo(worthMostPlat)
 	haveLeast := getCardInfo(haveLeastOf)
-	fmt.Printf("Worth most gold: %v\n", mostGold)
-	fmt.Printf("Worth most plat: %v\n", mostPlat)
-	fmt.Printf("Have least of: %v\n", haveLeast)
+	fmt.Printf("== Pack contained %v cards. Computed best picks from pack:\n", numCards)
+	fmt.Printf("\tWorth most gold: %v\n", mostGold)
+	fmt.Printf("\tWorth most plat: %v\n", mostPlat)
+	fmt.Printf("\tHave least of: %v\n", haveLeast)
 	// Now that we've done the comparison, print out our ROI for the pack
-	if len(cards) == 1 {
+	if cardsInPack == 1 {
 		packValue += worthMostPlat.plat
-		fmt.Printf("Total pack value: %v and pack profit is %v\n", packValue, packValue-packCost)
+		packProfit := packValue - packCost
+		sessionProfit += packProfit
+		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
 	}
 }
 
@@ -247,9 +326,10 @@ func mostPlat(c1, c2 Card) Card {
 
 // Something we use to write out a cache of our collection
 func cacheCollection() {
-	// fmt.Println("Entered cacheCollection()")
+	fmt.Printf("Entered cacheCollection() with timer of %v\n", collectionCacheTimer)
 	// First thing we do is stop the timer
 	collectionCacheTimer.Stop()
+	fmt.Printf("collectionCacheTimer stopped: %v\n", collectionCacheTimer)
 	// Open file. If it exists right now, remove that before creating a new one
 	cacheFile := Config["collection_file"]
 	if _, err := os.Stat(cacheFile); err == nil {
@@ -260,7 +340,7 @@ func cacheCollection() {
 		fmt.Printf("Could not create file %v for writing: %v\n", cacheFile, err)
 		return
 	}
-	// fmt.Printf("Opened file %v for writing\n", cacheFile)
+	fmt.Printf("Caching collection info to file '%v' \n", cacheFile)
 	// Defer our close
 	defer f.Close()
 
@@ -326,7 +406,12 @@ func collectionEvent(f map[string]interface{}) {
 	// We do this because sometimes we'll get many, many, MANY updates at once. We want
 	// to bundle them all up to be done in one go.
 	//	ccPointer := cacheCollection()
+	if collectionCacheTimer != nil {
+		fmt.Printf("Stopping collectionCacheTimer '%v'\n", collectionCacheTimer)
+		collectionCacheTimer.Stop()
+	}
 	collectionCacheTimer = time.AfterFunc(collectionTimerPeriod, cacheCollection)
+	fmt.Printf("Set new collectionCacheTimer '%v'\n", collectionCacheTimer)
 	// For DEBUGGING
 	//printCollection()
 }
@@ -335,14 +420,18 @@ func collectionEvent(f map[string]interface{}) {
 func gameEndedEvent(f map[string]interface{}) {
 	elapsed := time.Since(GameStartTime)
 	winners := f["Winners"].([]interface{})
+	winner := winners[0].(string)
+	winner = strings.TrimSpace(winner)
 	losers := f["Losers"].([]interface{})
-	fmt.Printf("%v triumphed over %v in an elapsed time of %s\n", winners[0], losers[0], elapsed)
+	loser := losers[0].(string)      // Gotta convert this to a string
+	loser = strings.TrimSpace(loser) // Then I can use TrimSpace() on it.
+	fmt.Printf("%v triumphed over %v in an elapsed time of %vm %vs\n", winner, loser, int(elapsed.Minutes()), int(elapsed.Seconds())%60)
 }
 
 // Message: {"Players":[],"User":"InGameName","Message":"GameStarted"}
 func gameStartedEvent() {
 	GameStartTime = time.Now()
-	fmt.Printf("Game started at %v\n", GameStartTime)
+	fmt.Printf("Game started at %v\n", GameStartTime.Format(time.UnixDate))
 }
 
 // {"User":"","Message":"Login"} - Logging in from new start of Hex
