@@ -71,9 +71,10 @@ var GameStartTime = time.Now()
 var packValue int
 var packCost int
 var sessionProfit int
-var cardsInPack int
 
-// var packContents = make([][]string)
+var packNum int
+var packContents [16]string
+var previousContents [16]string
 var draftCardsPicked = make(map[string]int)
 var collectionTimerPeriod = time.Second * time.Duration(20)
 var collectionCacheTimer *time.Timer
@@ -250,7 +251,15 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	incrementCardCount(uuid)
 	incrementDraftCardsPicked(uuid)
 	c := cardCollection[uuid]
+	info := getCardInfo(c)
+	fmt.Printf(">> Pack [%v]: You Drafted %v\n", packNum, info)
 	packValue += c.plat
+	// Put something here to remove c.name from packContents[packNum]
+	if packNum > 8 {
+		prevCard := fmt.Sprintf("'%v', ", c.name)
+		previousContents[packNum] = strings.Replace(previousContents[packNum], prevCard, "", 1)
+	}
+
 }
 
 // Process draft pack choices
@@ -260,10 +269,20 @@ func draftPackEvent(f map[string]interface{}) {
 	worthMostPlat := Card{name: "bogusvalue"}
 	cards, _ := f["Cards"].([]interface{})
 	numCards := len(cards)
+	// We need this for stuff when the DraftCard event fires
+	packNum = numCards
+	// reset the pack value for a new pack along with all the pack tracking arrays
 	if numCards == 15 {
 		packValue = 0
+		for n := range packContents {
+			packContents[n] = ""
+			previousContents[n] = ""
+		}
 	}
-	// If we have 9 or more cards in pack, save what we've got so we've got so we can determine what others picked
+	if numCards < 8 {
+		prevNum := numCards + 8
+		previousContents[numCards] = packContents[prevNum]
+	}
 	// Do some computations to figure out the optimal picks for plat, gold and filling out our collection
 	for _, u := range cards {
 		card := u.(map[string]interface{})
@@ -282,21 +301,34 @@ func draftPackEvent(f map[string]interface{}) {
 		haveLeastOf = leastQty(haveLeastOf, c)
 		worthMostGold = mostGold(worthMostGold, c)
 		worthMostPlat = mostPlat(worthMostPlat, c)
+		packContents[numCards] = fmt.Sprintf("%v, '%v'", packContents[numCards], c.name)
 
+		// If we have 9 or more cards in pack, save what we've got so we've got so we can determine what others picked
+		if numCards < 8 {
+			prevCard := fmt.Sprintf("'%v', ", c.name)
+			previousContents[numCards] = strings.Replace(previousContents[numCards], prevCard, "", 1)
+		}
+	}
+	packContents[numCards] = strings.Replace(packContents[numCards], ", ", "", 1)
+	fmt.Printf("++ Pack [%v] Contents: %v\n", numCards, packContents[numCards])
+	if numCards < 8 {
+		fmt.Printf("-- MISSING CARDS: %v\n", previousContents[numCards])
 	}
 	mostGold := getCardInfo(worthMostGold)
 	mostPlat := getCardInfo(worthMostPlat)
 	haveLeast := getCardInfo(haveLeastOf)
-	fmt.Printf("== Pack contained %v cards. Computed best picks from pack:\n", numCards)
+	fmt.Println("== Computed best picks from pack:")
 	fmt.Printf("\tWorth most gold: %v\n", mostGold)
 	fmt.Printf("\tWorth most plat: %v\n", mostPlat)
 	fmt.Printf("\tHave least of: %v\n", haveLeast)
 	// Now that we've done the comparison, print out our ROI for the pack
-	if cardsInPack == 1 {
+	if numCards == 1 {
 		packValue += worthMostPlat.plat
 		packProfit := packValue - packCost
 		sessionProfit += packProfit
+		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
 		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
+		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
 	}
 }
 
