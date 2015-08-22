@@ -202,7 +202,7 @@ func changeCardCount(uuid string, i int) {
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.qty += i
-		// fmt.Printf("New qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
+		fmt.Printf("New qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
 		cardCollection[uuid] = c
 	}
 }
@@ -252,7 +252,7 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	incrementDraftCardsPicked(uuid)
 	c := cardCollection[uuid]
 	info := getCardInfo(c)
-	fmt.Printf(">> Pack [%v]: You Drafted %v\n", packNum, info)
+	fmt.Printf("++ Pack [%v]: You Drafted %v\n", packNum, info)
 	packValue += c.plat
 	// Put something here to remove c.name from packContents[packNum]
 	if packNum > 8 {
@@ -310,14 +310,14 @@ func draftPackEvent(f map[string]interface{}) {
 		}
 	}
 	packContents[numCards] = strings.Replace(packContents[numCards], ", ", "", 1)
-	fmt.Printf("++ Pack [%v] Contents: %v\n", numCards, packContents[numCards])
+	fmt.Printf("== Pack [%v] Contents: %v\n", numCards, packContents[numCards])
 	if numCards < 8 {
 		fmt.Printf("-- MISSING CARDS: %v\n", previousContents[numCards])
 	}
 	mostGold := getCardInfo(worthMostGold)
 	mostPlat := getCardInfo(worthMostPlat)
 	haveLeast := getCardInfo(haveLeastOf)
-	fmt.Println("== Computed best picks from pack:")
+	fmt.Println("** Computed best picks from pack:")
 	fmt.Printf("\tWorth most gold: %v\n", mostGold)
 	fmt.Printf("\tWorth most plat: %v\n", mostPlat)
 	fmt.Printf("\tHave least of: %v\n", haveLeast)
@@ -333,10 +333,24 @@ func draftPackEvent(f map[string]interface{}) {
 }
 
 // Comparison functions between cards
-// We use '>' and '<' to favor cards of higher rarity if/when there's a tie since they show up later
+// We use 'mostGold' as the ultimate tie breaker (since it's less likely to be equal than the other two)
+// For 'mostGold', We use '>' and '<' to favor cards of higher rarity if/when there's a tie since they show up later
 // in the packs (as they are right now)
 func leastQty(c1, c2 Card) Card {
+	if c1.qty == c2.qty {
+		return mostPlat(c1, c2)
+	}
 	if c1.qty < c2.qty {
+		return c1
+	}
+	return c2
+}
+
+func mostPlat(c1, c2 Card) Card {
+	if c1.plat == c2.plat {
+		return mostGold(c1, c2)
+	}
+	if c1.plat > c2.plat {
 		return c1
 	}
 	return c2
@@ -349,19 +363,12 @@ func mostGold(c1, c2 Card) Card {
 	return c2
 }
 
-func mostPlat(c1, c2 Card) Card {
-	if c1.plat > c2.plat {
-		return c1
-	}
-	return c2
-}
-
 // Something we use to write out a cache of our collection
 func cacheCollection() {
-	fmt.Printf("Entered cacheCollection() with timer of %v\n", collectionCacheTimer)
+	// fmt.Printf("Entered cacheCollection() with timer of %v\n", collectionCacheTimer)
 	// First thing we do is stop the timer
 	collectionCacheTimer.Stop()
-	fmt.Printf("collectionCacheTimer stopped: %v\n", collectionCacheTimer)
+	// fmt.Printf("collectionCacheTimer stopped: %v\n", collectionCacheTimer)
 	// Open file. If it exists right now, remove that before creating a new one
 	cacheFile := Config["collection_file"]
 	if _, err := os.Stat(cacheFile); err == nil {
@@ -439,11 +446,11 @@ func collectionEvent(f map[string]interface{}) {
 	// to bundle them all up to be done in one go.
 	//	ccPointer := cacheCollection()
 	if collectionCacheTimer != nil {
-		fmt.Printf("Stopping collectionCacheTimer '%v'\n", collectionCacheTimer)
+		// fmt.Printf("Stopping collectionCacheTimer '%v'\n", collectionCacheTimer)
 		collectionCacheTimer.Stop()
 	}
 	collectionCacheTimer = time.AfterFunc(collectionTimerPeriod, cacheCollection)
-	fmt.Printf("Set new collectionCacheTimer '%v'\n", collectionCacheTimer)
+	// fmt.Printf("Set new collectionCacheTimer '%v'\n", collectionCacheTimer)
 	// For DEBUGGING
 	//printCollection()
 }
