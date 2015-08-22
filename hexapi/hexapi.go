@@ -194,15 +194,21 @@ func changeCardCount(uuid string, i int) {
 	// Check to see if we've got an entry in draftCardsPicked we need to account for
 	if _, ok := draftCardsPicked[uuid]; ok {
 		if draftCardsPicked[uuid] > 0 {
+			c := cardCollection[uuid]
+			fmt.Printf("INFO: Not incrementing %v because it's on the draft list %v times\n", c.name, draftCardsPicked[uuid])
 			decrementDraftCardsPicked(uuid)
 			return
 		}
 	}
+	// if not, go ahead and call the dangerous function
+	rawChangeCardCount(uuid, i)
+}
+func rawChangeCardCount(uuid string, i int) {
 	// If not, go ahead and actually increment the card count.
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.qty += i
-		fmt.Printf("New qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
+		fmt.Printf("INFO: New qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
 		cardCollection[uuid] = c
 	}
 }
@@ -214,15 +220,20 @@ func decrementDraftCardsPicked(uuid string) {
 }
 func changeDraftCardsCount(uuid string, i int) {
 	if _, ok := draftCardsPicked[uuid]; ok {
+		// fmt.Printf("INFO: Bumping %v by %v for total of %v\n", uuid, i, draftCardsPicked[uuid])
 		draftCardsPicked[uuid] += i
 	} else {
+		// fmt.Printf("INFO: Adding %v to map and setting value to 1\n", uuid)
 		draftCardsPicked[uuid] = 0
 		draftCardsPicked[uuid] += i
 	}
 	// Make sure we don't go negative
 	if draftCardsPicked[uuid] < 0 {
+		// fmt.Printf("INFO: PREVENTING us from going negative for UUID %v\n", uuid)
 		draftCardsPicked[uuid] = 0
 	}
+	// Call the rawChangeCardCount function here so we have one stop shopping for Draft func calls
+	rawChangeCardCount(uuid, i)
 }
 
 // Show us relevant info about the cards
@@ -248,7 +259,7 @@ func getCardUUID(f map[string]interface{}) string {
 func draftCardPickedEvent(f map[string]interface{}) {
 	card := f["Card"].(map[string]interface{})
 	uuid := getCardUUID(card)
-	incrementCardCount(uuid)
+	// incrementCardCount(uuid)
 	incrementDraftCardsPicked(uuid)
 	c := cardCollection[uuid]
 	info := getCardInfo(c)
@@ -428,6 +439,8 @@ func collectionEvent(f map[string]interface{}) {
 			v.qty = 0
 			cardCollection[k] = v
 		}
+	} else {
+		fmt.Print("Handling Update Collection message\n")
 	}
 	// Ok, let's extract the cards and update the numbers of each card.
 	// TODO: cache that locally (in case we need to restart for some reason)
