@@ -56,12 +56,12 @@ type nameToUUIDMap map[string]string
 
 var ntum = make(nameToUUIDMap)
 
-type sortedCardCollection struct {
-	cc map[string]Card
-	s  []string
-}
+// type sortedCardCollection struct {
+// 	cc map[string]Card
+// 	s  []string
+// }
 
-var scc sortedCardCollection
+// var scc sortedCardCollection
 
 // Configuration values we'll use all around
 var Config = make(map[string]string)
@@ -95,21 +95,22 @@ var cardCollectionMap = map[string]string{
 
 // Something to print out details of our collection for all cards we have at least 1 of
 func printCollection() {
-	// Make map of names to uuids
-	for _, c := range cardCollection {
-		k := c.name
-		ntum[k] = c.uuid
-	}
-	// Make array of the keys of that map
-	nmk := make([]string, len(ntum))
-	// Populate that array
-	n := 0
-	for k := range ntum {
-		nmk[n] = k
-		n++
-	}
-	// Sort that array
-	sort.Strings(nmk)
+	// // Make map of names to uuids
+	// for _, c := range cardCollection {
+	// 	k := c.name
+	// 	ntum[k] = c.uuid
+	// }
+	// // Make array of the keys of that map
+	// nmk := make([]string, len(ntum))
+	// // Populate that array
+	// n := 0
+	// for k := range ntum {
+	// 	nmk[n] = k
+	// 	n++
+	// }
+	// // Sort that array
+	// sort.Strings(nmk)
+	nmk := listCardsSortedByName()
 	// Then use that array to print out card info in Alphabetical order
 	for _, name := range nmk {
 		uuid := ntum[name]
@@ -405,6 +406,61 @@ func cacheCollection() {
 	}
 	f.Sync()
 	// fmt.Println("! Caching of collection is complete")
+	if Config["export_csv"] == "true" {
+		csvFile := Config["csv_filename"]
+		if _, err := os.Stat(csvFile); err == nil {
+			os.Remove(csvFile)
+		}
+		f, err := os.Create(csvFile)
+		if err != nil {
+			fmt.Printf("Could not create file %v for writing: %v\n", csvFile, err)
+			return
+		}
+		fmt.Printf("Writing CSV card data to file '%v' \n", csvFile)
+		// Defer our close
+		defer f.Close()
+
+		// Get a sorted list of cards
+		nmk := listCardsSortedByName()
+		// Then use that array to print out card info in Alphabetical order
+		for _, name := range nmk {
+			uuid := ntum[name]
+			entry := cardCollection[uuid]
+			if entry.qty > 0 {
+				line := fmt.Sprintf("\"%v\",%v\n", entry.name, entry.qty)
+				f.WriteString(line)
+			}
+		}
+
+		// // Look through cards to write out key/value data
+		// for k, v := range cardCollection {
+		// 	if v.qty == 0 {
+		// 		continue
+		// 	}
+		// 	line := fmt.Sprintf("%v : %v\n", k, v.qty)
+		// 	f.WriteString(line)
+		// 	// fmt.Printf(".")
+		// }
+
+	}
+}
+
+func listCardsSortedByName() []string {
+	// Make map of names to uuids
+	for _, c := range cardCollection {
+		k := c.name
+		ntum[k] = c.uuid
+	}
+	// Make array of the keys of that map
+	nmk := make([]string, len(ntum))
+	// Populate that array
+	n := 0
+	for k := range ntum {
+		nmk[n] = k
+		n++
+	}
+	sort.Strings(nmk)
+	return nmk
 }
 
 // Read in the info we cached up there.
@@ -439,7 +495,7 @@ func collectionEvent(f map[string]interface{}) {
 			v.qty = 0
 			cardCollection[k] = v
 		}
-	} else {
+	} else if action == "Update" {
 		fmt.Print("Handling Update Collection message\n")
 	}
 	// Ok, let's extract the cards and update the numbers of each card.
@@ -457,7 +513,6 @@ func collectionEvent(f map[string]interface{}) {
 	// Schedule our collectionCacheTimer to write out the collection to the cache file
 	// We do this because sometimes we'll get many, many, MANY updates at once. We want
 	// to bundle them all up to be done in one go.
-	//	ccPointer := cacheCollection()
 	if collectionCacheTimer != nil {
 		// fmt.Printf("Stopping collectionCacheTimer '%v'\n", collectionCacheTimer)
 		collectionCacheTimer.Stop()
@@ -465,7 +520,7 @@ func collectionEvent(f map[string]interface{}) {
 	collectionCacheTimer = time.AfterFunc(collectionTimerPeriod, cacheCollection)
 	// fmt.Printf("Set new collectionCacheTimer '%v'\n", collectionCacheTimer)
 	// For DEBUGGING
-	//printCollection()
+	// printCollection()
 }
 
 // Message: {"Winners":["Uzume, Grand Concubunny"],"Losers":["Warmaster Fuzzuko"],"User":"InGameName","Message":"GameEnded"}
@@ -599,6 +654,9 @@ func loadDefaults() map[string]string {
 	// May be able to get rid of this since we're getting uuids from above
 	retMap["aa_promo_url"] = "http://doc-x.net/hex/aa_promo_list.txt"
 	retMap["collection_file"] = "collection.out"
+	// Do we want to export to CSV and, if so, what's the filename we want to use?
+	retMap["export_csv"] = "big_fat_nope_a_rino"
+	retMap["csv_filename"] = "collection.csv"
 	// Here so we can copy and paste it later
 	retMap["key"] = "val"
 
