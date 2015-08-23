@@ -4,25 +4,25 @@ package main
 //  + Parse JSON into something I can do stuff with
 //  + Read in config values from a config file
 //  + Get price data from URL
-// 	- Profit and loss for draft packs
-// 	- Better sorting/comparisons for picking purposes when items are equal
+// 	+ Profit and loss for draft packs
+// 	+ Better sorting/comparisons for picking purposes when items are equal
 //  - Handle the following types of events
 //    + Login
 //    + Logout
 //    + DraftPack
 // 		+ Collection
 // 		- SaveDeck
-//    - DraftCardPicked/DaraftCardPicked
+//    + DraftCardPicked/DaraftCardPicked
 //    + GameStarted
 //    + GameEnded
 //    - PlayerUpdated
-//    - CardUpdated
-//  - Track pack data and indicate which cards were picked when packs wheel
-//  - Track Profit/Loss for drafts
+//    * CardUpdated (Some handled, but more work can eb done)
+//  + Track pack data and indicate which cards were picked when packs wheel
+//  + Track Profit/Loss for drafts
+//  + Check for updated versions by checking remote URL
 //
 //  Stretch Goals
 //  - Post card data to remote URL (for collating draw data)
-//  - Check for updated versions by checking remote URL
 
 import (
 	"bufio"
@@ -33,11 +33,14 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// The Version of the program so we can figure out if we're using the most recent version
 
 // Card The Cards we work with and all the info we need about them
 type Card struct {
@@ -49,19 +52,17 @@ type Card struct {
 	plat   int
 }
 
+var programVersion = "0.1"
+var programName = os.Args[0]
+var programPlatform = runtime.GOOS
+var programArch = runtime.GOARCH
+
 // And this is all our cards together... we use uuid as a key
 var cardCollection = make(map[string]Card)
 
 type nameToUUIDMap map[string]string
 
 var ntum = make(nameToUUIDMap)
-
-// type sortedCardCollection struct {
-// 	cc map[string]Card
-// 	s  []string
-// }
-
-// var scc sortedCardCollection
 
 // Configuration values we'll use all around
 var Config = make(map[string]string)
@@ -71,6 +72,8 @@ var GameStartTime = time.Now()
 var packValue int
 var packCost int
 var sessionProfit int
+
+var loadingCacheOrPriceData = false
 
 var packNum int
 var packContents [16]string
@@ -85,10 +88,11 @@ var cardCollectionMap = map[string]string{
 	"4":   "Opposing Champion",
 	"8":   "Play",
 	"16":  "Discard",
-	"32":  "ZONE 32",
+	"32":  "Void",
 	"64":  "Shard",
 	"128": "Chain",
 	"256": "Tunnelled",
+	"512": "Choose Effect",
 }
 
 // FUNCTIONS
@@ -130,10 +134,11 @@ func printCollection() {
 //	4 - Opposing Champion
 //	8 - In Play (battle zone)
 //	16 - Discard Pile
-//	32 - ?????
+//	32 - Void
 //	64 - Shard Zone (where shards go when they're played)
 //	128 - The Chain
 //	256 - Tunnelled
+//  512 - Effect Choose???
 //
 // State
 //	8192 - Ready
@@ -209,7 +214,9 @@ func rawChangeCardCount(uuid string, i int) {
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.qty += i
-		fmt.Printf("INFO: New qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
+		if loadingCacheOrPriceData == false {
+			fmt.Printf("INFO: New qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
+		}
 		cardCollection[uuid] = c
 	}
 }
@@ -235,6 +242,45 @@ func changeDraftCardsCount(uuid string, i int) {
 	}
 	// Call the rawChangeCardCount function here so we have one stop shopping for Draft func calls
 	rawChangeCardCount(uuid, i)
+}
+
+// Check our program version to see it it's the most recent and, if not, tell
+// the kind users that they should upgrade.
+func checkProgramVersion() {
+	fmt.Print("Checking for program updates . . . ")
+	versionURL := "http://doc-x.net/hex/downloads/hexapi_version.txt"
+	resp, err := http.Get(versionURL)
+	if err != nil {
+		fmt.Printf("Could not retrive version information from version url: '%v'. Encountered the following error: %v\n", versionURL, err)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	version := string(body)
+	version = strings.Replace(version, "\n", "", 1)
+	if programVersion == version {
+		fmt.Printf("Running up to date version '%v'\n", version)
+		time.Sleep(time.Second)
+	} else {
+		downloadURL := fmt.Sprintf("http://doc-x.net/hex/downlaods/hexapi_%v_%v", programPlatform, programArch)
+		if programPlatform == "windows" {
+			downloadURL = fmt.Sprintf("%v.exe", downloadURL)
+		}
+		fmt.Print(" version mismatch. WARNING!!!\n")
+		fmt.Printf("\tCurrent version is '%v'. You are running version '%v'.\n", version, programVersion)
+		fmt.Printf("\tPlease download a new copy from %v\n", downloadURL)
+		secondString := "seconds"
+		for i := 5; i > 0; i-- {
+			if i == 1 {
+				secondString = "second"
+			}
+			fmt.Printf("\tContinuing in %v %v\n", i, secondString)
+			time.Sleep(time.Second)
+		}
+	}
 }
 
 // Show us relevant info about the cards
@@ -406,6 +452,8 @@ func cacheCollection() {
 	}
 	f.Sync()
 	// fmt.Println("! Caching of collection is complete")
+
+	// If the user asked us to cache a CSV file, go ahead and accomodate them
 	if Config["export_csv"] == "true" {
 		csvFile := Config["csv_filename"]
 		if _, err := os.Stat(csvFile); err == nil {
@@ -431,17 +479,6 @@ func cacheCollection() {
 				f.WriteString(line)
 			}
 		}
-
-		// // Look through cards to write out key/value data
-		// for k, v := range cardCollection {
-		// 	if v.qty == 0 {
-		// 		continue
-		// 	}
-		// 	line := fmt.Sprintf("%v : %v\n", k, v.qty)
-		// 	f.WriteString(line)
-		// 	// fmt.Printf(".")
-		// }
-
 	}
 }
 
@@ -471,6 +508,9 @@ func readCollectionCache() {
 	scanner := bufio.NewScanner(in)
 	scanner.Split(bufio.ScanLines)
 
+	// Set this so we don't spam out card count info messages
+	loadingCacheOrPriceData = true
+
 	re1, _ := regexp.Compile(`^(.*) : (\d+)$`)
 	for scanner.Scan() {
 		// Split on regex and stuff count information into cardCollection
@@ -481,6 +521,8 @@ func readCollectionCache() {
 		setCardCount(uuid, i)
 		// fmt.Println(scanner.Text())
 	}
+	// And, now that we're done, reset this
+	loadingCacheOrPriceData = false
 }
 
 // Process Collection Event
@@ -722,6 +764,10 @@ func getCardPriceInfo() {
 	lines := strings.Split(s, "\n")
 	re, err := regexp.Compile(`^(.*?) \.\.\. ([\d\w-]+) \.\.\. (\d+) PLATINUM.* \.\.\. (\d+) GOLD`)
 	fmt.Println("Processing price data")
+
+	// Reduce the spamminess of loading collection info
+	loadingCacheOrPriceData = true
+
 	// We skip the first line since it's a header line
 	for _, line := range lines[1:] {
 		result := re.FindStringSubmatch(line)
@@ -750,6 +796,9 @@ func getCardPriceInfo() {
 			}
 		}
 	}
+	// Now, turn back on info messages for changes in card counts
+	loadingCacheOrPriceData = false
+
 	// Grab out the draft pack price here
 	draftPack := cardCollection["draftpak-0000-0000-0000-000000000000"]
 	packCost = draftPack.plat
@@ -762,6 +811,8 @@ func main() {
 	Config = loadDefaults()
 	Config = readConfig("config.ini", Config)
 	//	fmt.Printf("Using the following configuration values\n\tPrice URL (price_url): '%v'\n\tCollection file (collection_file): '%v'\n\tAlternate Art/Promo List URL(aa_promo_url): '%v'\n", Config["price_url"], Config["collection_file"], Config["aa_promo_url"])
+	// Check to see if we're running the most recent version
+	checkProgramVersion()
 	// Retrieve card price info
 	getCardPriceInfo()
 	// Read in our collection cache
