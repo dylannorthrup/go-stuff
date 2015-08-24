@@ -52,7 +52,7 @@ type Card struct {
 	plat   int
 }
 
-var programVersion = "0.1"
+var programVersion = "0.2"
 var programName = os.Args[0]
 var programPlatform = runtime.GOOS
 var programArch = runtime.GOARCH
