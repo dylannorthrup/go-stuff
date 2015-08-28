@@ -20,6 +20,7 @@ package main
 //  + Track pack data and indicate which cards were picked when packs wheel
 //  + Track Profit/Loss for drafts
 //  + Check for updated versions by checking remote URL
+//  - Configurable version URLs
 //
 //  Stretch Goals
 //  - Post card data to remote URL (for collating draw data)
@@ -52,7 +53,7 @@ type Card struct {
 	plat   int
 }
 
-var programVersion = "0.2"
+var programVersion = "0.3"
 var programName = os.Args[0]
 var programPlatform = runtime.GOOS
 var programArch = runtime.GOARCH
@@ -197,15 +198,18 @@ func setCardCount(uuid string, i int) {
 	}
 }
 func changeCardCount(uuid string, i int) {
+	// fmt.Println("Inside changeCardCount()")
 	// Check to see if we've got an entry in draftCardsPicked we need to account for
 	if _, ok := draftCardsPicked[uuid]; ok {
 		if draftCardsPicked[uuid] > 0 {
-			c := cardCollection[uuid]
-			fmt.Printf("INFO: Not incrementing %v because it's on the draft list %v times\n", c.name, draftCardsPicked[uuid])
+			// c := cardCollection[uuid]
+			// fmt.Printf("INFO: Not incrementing %v because it's on the draft list %v times\n", c.name, draftCardsPicked[uuid])
 			decrementDraftCardsPicked(uuid)
+			// fmt.Println("About to return from inside changeCardCount")
 			return
 		}
 	}
+	// fmt.Println("No draft cards for this type. Handing off to rawChangeCardCount")
 	// if not, go ahead and call the dangerous function
 	rawChangeCardCount(uuid, i)
 }
@@ -215,7 +219,7 @@ func rawChangeCardCount(uuid string, i int) {
 		c := cardCollection[uuid]
 		c.qty += i
 		if loadingCacheOrPriceData == false {
-			fmt.Printf("INFO: New qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
+			fmt.Printf("INFO: New collection qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
 		}
 		cardCollection[uuid] = c
 	}
@@ -241,14 +245,14 @@ func changeDraftCardsCount(uuid string, i int) {
 		draftCardsPicked[uuid] = 0
 	}
 	// Call the rawChangeCardCount function here so we have one stop shopping for Draft func calls
-	rawChangeCardCount(uuid, i)
+	// rawChangeCardCount(uuid, i)
 }
 
 // Check our program version to see it it's the most recent and, if not, tell
 // the kind users that they should upgrade.
 func checkProgramVersion() {
 	fmt.Print("Checking for program updates . . . ")
-	versionURL := "http://doc-x.net/hex/downloads/hexapi_version.txt"
+	versionURL := Config["version_url"]
 	resp, err := http.Get(versionURL)
 	if err != nil {
 		fmt.Printf("Could not retrive version information from version url: '%v'. Encountered the following error: %v\n", versionURL, err)
@@ -376,8 +380,8 @@ func draftPackEvent(f map[string]interface{}) {
 	mostPlat := getCardInfo(worthMostPlat)
 	haveLeast := getCardInfo(haveLeastOf)
 	fmt.Println("** Computed best picks from pack:")
-	fmt.Printf("\tWorth most gold: %v\n", mostGold)
 	fmt.Printf("\tWorth most plat: %v\n", mostPlat)
+	fmt.Printf("\tWorth most gold: %v\n", mostGold)
 	fmt.Printf("\tHave least of: %v\n", haveLeast)
 	// Now that we've done the comparison, print out our ROI for the pack
 	if numCards == 1 {
@@ -437,7 +441,7 @@ func cacheCollection() {
 		fmt.Printf("Could not create file %v for writing: %v\n", cacheFile, err)
 		return
 	}
-	fmt.Printf("Caching collection info to file '%v' \n", cacheFile)
+	fmt.Printf("Caching collection info to file '%v'.  ", cacheFile)
 	// Defer our close
 	defer f.Close()
 
@@ -464,7 +468,7 @@ func cacheCollection() {
 			fmt.Printf("Could not create file %v for writing: %v\n", csvFile, err)
 			return
 		}
-		fmt.Printf("Writing CSV card data to file '%v' \n", csvFile)
+		fmt.Printf("Writing CSV card data to file '%v'.\n", csvFile)
 		// Defer our close
 		defer f.Close()
 
@@ -537,8 +541,10 @@ func collectionEvent(f map[string]interface{}) {
 			v.qty = 0
 			cardCollection[k] = v
 		}
+		// Also, turn off update printing to reduce spamming of the screen.
+		loadingCacheOrPriceData = true
 	} else if action == "Update" {
-		fmt.Print("Handling Update Collection message\n")
+		// fmt.Print("Handling Update Collection message\n")
 	}
 	// Ok, let's extract the cards and update the numbers of each card.
 	// TODO: cache that locally (in case we need to restart for some reason)
@@ -552,6 +558,8 @@ func collectionEvent(f map[string]interface{}) {
 		uuid := getCardUUID(card)
 		decrementCardCount(uuid)
 	}
+	// And, reset this (even if it wasn't set, we'll make sure it gets unset)
+	loadingCacheOrPriceData = false
 	// Schedule our collectionCacheTimer to write out the collection to the cache file
 	// We do this because sometimes we'll get many, many, MANY updates at once. We want
 	// to bundle them all up to be done in one go.
@@ -699,9 +707,10 @@ func loadDefaults() map[string]string {
 	// Do we want to export to CSV and, if so, what's the filename we want to use?
 	retMap["export_csv"] = "big_fat_nope_a_rino"
 	retMap["csv_filename"] = "collection.csv"
+	// Default location to check for version information
+	retMap["version_url"] = "http://doc-x.net/hex/downloads/hexapi_version.txt"
 	// Here so we can copy and paste it later
 	retMap["key"] = "val"
-
 	return retMap
 }
 
