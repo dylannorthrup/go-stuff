@@ -75,6 +75,7 @@ var packCost int
 var sessionProfit int
 
 var loadingCacheOrPriceData = false
+var currentlyDrafting = false
 
 var packNum int
 var packContents [16]string
@@ -199,14 +200,18 @@ func setCardCount(uuid string, i int) {
 }
 func changeCardCount(uuid string, i int) {
 	// fmt.Println("Inside changeCardCount()")
-	// Check to see if we've got an entry in draftCardsPicked we need to account for
-	if _, ok := draftCardsPicked[uuid]; ok {
-		if draftCardsPicked[uuid] > 0 {
-			// c := cardCollection[uuid]
-			// fmt.Printf("INFO: Not incrementing %v because it's on the draft list %v times\n", c.name, draftCardsPicked[uuid])
-			decrementDraftCardsPicked(uuid)
-			// fmt.Println("About to return from inside changeCardCount")
-			return
+	// If we're currently drafting, we want to skip this check (it'll all come out in the wash later, but
+	// for now we want these counts to go up so they're accurately reflected in the selection output)
+	if !currentlyDrafting {
+		// Check to see if we've got an entry in draftCardsPicked we need to account for
+		if _, ok := draftCardsPicked[uuid]; ok {
+			if draftCardsPicked[uuid] > 0 {
+				// c := cardCollection[uuid]
+				// fmt.Printf("INFO: Not incrementing %v because it's on the draft list %v times\n", c.name, draftCardsPicked[uuid])
+				decrementDraftCardsPicked(uuid)
+				// fmt.Println("About to return from inside changeCardCount")
+				return
+			}
 		}
 	}
 	// fmt.Println("No draft cards for this type. Handing off to rawChangeCardCount")
@@ -214,7 +219,6 @@ func changeCardCount(uuid string, i int) {
 	rawChangeCardCount(uuid, i)
 }
 func rawChangeCardCount(uuid string, i int) {
-	// If not, go ahead and actually increment the card count.
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.qty += i
@@ -308,9 +312,11 @@ func getCardUUID(f map[string]interface{}) string {
 // Immediately increment the count of the card, but also keep track of this
 // so we can adjust later when the Collection Update events come in
 func draftCardPickedEvent(f map[string]interface{}) {
+	// Make sure we know we're drafting
+	currentlyDrafting = true
 	card := f["Card"].(map[string]interface{})
 	uuid := getCardUUID(card)
-	// incrementCardCount(uuid)
+	incrementCardCount(uuid)
 	incrementDraftCardsPicked(uuid)
 	c := cardCollection[uuid]
 	info := getCardInfo(c)
@@ -321,7 +327,15 @@ func draftCardPickedEvent(f map[string]interface{}) {
 		prevCard := fmt.Sprintf("'%v', ", c.name)
 		previousContents[packNum] = strings.Replace(previousContents[packNum], prevCard, "", 1)
 	}
+	if packNum == 1 {
+		packProfit := packValue - packCost
+		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
+		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
+		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
 
+	}
+	// And unset this in case we're done
+	currentlyDrafting = false
 }
 
 // Process draft pack choices
@@ -388,9 +402,9 @@ func draftPackEvent(f map[string]interface{}) {
 		packValue += worthMostPlat.plat
 		packProfit := packValue - packCost
 		sessionProfit += packProfit
-		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
-		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
-		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
+		// fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
+		// fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
+		// fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
 	}
 }
 
@@ -535,7 +549,7 @@ func collectionEvent(f map[string]interface{}) {
 	added, _ := f["CardsAdded"].([]interface{})
 	removed, _ := f["CardsRemoved"].([]interface{})
 	if action == "Overwrite" {
-		fmt.Printf("Got an Overwrite Collection message\n")
+		fmt.Printf("Got an Overwrite Collection message. Doing full update of card collection.\n")
 		// First thing we do is reset counts on all cards
 		for k, v := range cardCollection {
 			v.qty = 0
