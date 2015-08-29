@@ -20,7 +20,7 @@ package main
 //  + Track pack data and indicate which cards were picked when packs wheel
 //  + Track Profit/Loss for drafts
 //  + Check for updated versions by checking remote URL
-//  - Configurable version URLs
+//  + Configurable version URLs
 //
 //  Stretch Goals
 //  - Post card data to remote URL (for collating draw data)
@@ -41,8 +41,6 @@ import (
 	"time"
 )
 
-// The Version of the program so we can figure out if we're using the most recent version
-
 // Card The Cards we work with and all the info we need about them
 type Card struct {
 	name   string
@@ -53,7 +51,10 @@ type Card struct {
 	plat   int
 }
 
+// The Version of the program so we can figure out if we're using the most recent version
 var programVersion = "0.3"
+
+// Vars so we can figure out what our update URL is
 var programName = os.Args[0]
 var programPlatform = runtime.GOOS
 var programArch = runtime.GOARCH
@@ -61,26 +62,26 @@ var programArch = runtime.GOARCH
 // And this is all our cards together... we use uuid as a key
 var cardCollection = make(map[string]Card)
 
-type nameToUUIDMap map[string]string
-
-var ntum = make(nameToUUIDMap)
+// We use this for sorting by name instead of by UUID. ntum = "Name To UUID Map"
+var ntum = make(map[string]string)
 
 // Configuration values we'll use all around
 var Config = make(map[string]string)
 
 // And some general variables we'll use to keep track of things
 var GameStartTime = time.Now()
+
 var packValue int
 var packCost int
+var packNum int
+var packContents [16]string
+var previousContents [16]string
+var draftCardsPicked = make(map[string]int)
 var sessionProfit int
 
 var loadingCacheOrPriceData = false
 var currentlyDrafting = false
 
-var packNum int
-var packContents [16]string
-var previousContents [16]string
-var draftCardsPicked = make(map[string]int)
 var collectionTimerPeriod = time.Second * time.Duration(20)
 var collectionCacheTimer *time.Timer
 var cardCollectionMap = map[string]string{
@@ -101,21 +102,7 @@ var cardCollectionMap = map[string]string{
 
 // Something to print out details of our collection for all cards we have at least 1 of
 func printCollection() {
-	// // Make map of names to uuids
-	// for _, c := range cardCollection {
-	// 	k := c.name
-	// 	ntum[k] = c.uuid
-	// }
-	// // Make array of the keys of that map
-	// nmk := make([]string, len(ntum))
-	// // Populate that array
-	// n := 0
-	// for k := range ntum {
-	// 	nmk[n] = k
-	// 	n++
-	// }
-	// // Sort that array
-	// sort.Strings(nmk)
+	// Get sorted array of card names
 	nmk := listCardsSortedByName()
 	// Then use that array to print out card info in Alphabetical order
 	for _, name := range nmk {
