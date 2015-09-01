@@ -21,6 +21,7 @@ package main
 //  + Track Profit/Loss for drafts
 //  + Check for updated versions by checking remote URL
 //  + Configurable version URLs
+//  + Detect and Ignore duplicate API messages
 //
 //  Stretch Goals
 //  - Post card data to remote URL (for collating draw data)
@@ -78,6 +79,7 @@ var packContents [16]string
 var previousContents [16]string
 var draftCardsPicked = make(map[string]int)
 var sessionProfit int
+var lastAPIMessage string
 
 var loadingCacheOrPriceData = false
 var currentlyDrafting = false
@@ -622,6 +624,11 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		panic("AIEEE: Could not readAll for req.Body")
 	}
+	if lastAPIMessage == string(body) {
+		fmt.Println("INFO: Duplicate API Message. Discarding.")
+		return
+	}
+	lastAPIMessage = string(body)
 	//	fmt.Println("REPLY BODY: ", string(body))
 	//err = json.Unmarshal(body, &t)
 	var f map[string]interface{}
