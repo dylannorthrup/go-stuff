@@ -84,8 +84,15 @@ var lastAPIMessage string
 var loadingCacheOrPriceData = false
 var currentlyDrafting = false
 
+// Refresh price data every two hours
+var priceRefreshTimerPeriod = time.Hour * time.Duration(2)
+var priceRefreshCacheTimer *time.Timer
+
+// Cache collection data 20 seconds after the last collection message was received
 var collectionTimerPeriod = time.Second * time.Duration(20)
 var collectionCacheTimer *time.Timer
+
+// List of locations cards can be for CardUpdated events
 var cardCollectionMap = map[string]string{
 	"0":   "Champion",
 	"1":   "Deck",
@@ -539,7 +546,7 @@ func collectionEvent(f map[string]interface{}) {
 	removed, _ := f["CardsRemoved"].([]interface{})
 	if action == "Overwrite" {
 		fmt.Printf("Got an Overwrite Collection message. Doing full update of card collection.\n")
-		// First thing we do is reset counts on all cards
+		// If this is an Overwrite message, first thing we do is reset counts on all cards
 		for k, v := range cardCollection {
 			v.qty = 0
 			cardCollection[k] = v
@@ -624,8 +631,9 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		panic("AIEEE: Could not readAll for req.Body")
 	}
+	// Check to see if the last API message
 	if lastAPIMessage == string(body) {
-		fmt.Println("INFO: Duplicate API Message. Discarding.")
+		// fmt.Println("INFO: Duplicate API Message. Discarding.")
 		return
 	}
 	lastAPIMessage = string(body)
@@ -757,18 +765,36 @@ func getCardPriceInfo() {
 	//    Adamanthain Scrivener ... d2222e6c-c8f8-4dad-b6dl-c0aacd3fc8f0 ...  4 PLATINUM [23 Auctions] ... 187 GOLD [231 Auctions]
 	var body []byte
 	var err error
+	updatingData := false
+	gotHTTPError := false
+	if priceRefreshCacheTimer != nil {
+		updatingData = true
+		fmt.Println("Updating price data to insure it is fresh")
+	}
 	if Config["local_price_file"] == "" {
 		fmt.Printf("Retrieving prices from %v\n", Config["price_url"])
 		resp, err := http.Get(Config["price_url"])
 		if err != nil {
+			gotHTTPError = true
+		}
+		// If we had a problem AND we're not simply doing an update, then exit.
+		// Othwerise, continue on and we'll just be using (possibly) stale data
+		if gotHTTPError && !updatingData {
 			fmt.Printf("Could not retrive information from price_url: '%v'. Encountered the following error: %v\n", Config["price_url"], err)
 			fmt.Printf("exiting since we kinda need that information\n")
 			os.Exit(1)
+		} else if gotHTTPError && updatingData {
+			fmt.Println("Encountered error refreshing price data. Will try again later. Using previously cached data in the interim.")
+			setPriceRefreshTimer()
+			return
 		}
-		defer resp.Body.Close()
-		body, err = ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Fatal(err)
+		// If we didn't encounter a problem, read in the data so we can process it
+		if !gotHTTPError {
+			defer resp.Body.Close()
+			body, err = ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	} else {
 		fmt.Printf("Retrieving prices from %v\n", Config["local_price_file"])
@@ -777,50 +803,69 @@ func getCardPriceInfo() {
 			log.Fatal(err)
 		}
 	}
-	s := string(body)
-	lines := strings.Split(s, "\n")
-	re, err := regexp.Compile(`^(.*?) \.\.\. ([\d\w-]+) \.\.\. (\d+) PLATINUM.* \.\.\. (\d+) GOLD`)
-	fmt.Println("Processing price data")
+	// If we didn't have a problem retrieving the HTTP data, go ahead and process it
+	// Also, this shouldn't get set if we're reading in from a local file
+	if !gotHTTPError {
+		s := string(body)
+		lines := strings.Split(s, "\n")
+		re, _ := regexp.Compile(`^(.*?) \.\.\. ([\d\w-]+) \.\.\. (\d+) PLATINUM.* \.\.\. (\d+) GOLD`)
+		fmt.Println("Processing price data")
 
-	// Reduce the spamminess of loading collection info
-	loadingCacheOrPriceData = true
+		// Reduce the spamminess of loading collection info
+		loadingCacheOrPriceData = true
 
-	// We skip the first line since it's a header line
-	for _, line := range lines[1:] {
-		result := re.FindStringSubmatch(line)
-		if len(result) > 0 {
-			name := result[1]
-			uuid := result[2]
-			plat, _ := strconv.Atoi(result[3])
-			gold, _ := strconv.Atoi(result[4])
-			//			fmt.Printf("Name: %v - %v - %vp, %vg\n", name, uuid, plat, gold)
-			// We test to see if this uuid is already in our collection. If so, update it
-			if _, ok := cardCollection[uuid]; ok {
-				// We can't update directly, so we create a new card, modify it's values, then reassign it back to
-				// to cardCollection
-				c := cardCollection[uuid]
-				c.name = name
-				c.uuid = uuid
-				c.plat = plat
-				c.gold = gold
-				cardCollection[uuid] = c
-			} else {
-				// If it doesn't exist, create a new card with appropriate values and add it to the map
-				c := Card{name: name, uuid: uuid, plat: plat, gold: gold}
-				cardCollection[uuid] = c
-				// And update our name to uuid map
-				ntum[name] = uuid
+		// We skip the first line since it's a header line
+		for _, line := range lines[1:] {
+			result := re.FindStringSubmatch(line)
+			if len(result) > 0 {
+				name := result[1]
+				uuid := result[2]
+				plat, _ := strconv.Atoi(result[3])
+				gold, _ := strconv.Atoi(result[4])
+				//			fmt.Printf("Name: %v - %v - %vp, %vg\n", name, uuid, plat, gold)
+				// We test to see if this uuid is already in our collection. If so, update it
+				if _, ok := cardCollection[uuid]; ok {
+					// We can't update directly, so we create a new card, modify it's values, then reassign it back to
+					// to cardCollection
+					c := cardCollection[uuid]
+					c.name = name
+					c.uuid = uuid
+					c.plat = plat
+					c.gold = gold
+					cardCollection[uuid] = c
+				} else {
+					// If it doesn't exist, create a new card with appropriate values and add it to the map
+					c := Card{name: name, uuid: uuid, plat: plat, gold: gold}
+					cardCollection[uuid] = c
+					// And update our name to uuid map
+					ntum[name] = uuid
+				}
 			}
 		}
+		// Now, turn back on info messages for changes in card counts
+		loadingCacheOrPriceData = false
 	}
-	// Now, turn back on info messages for changes in card counts
-	loadingCacheOrPriceData = false
 
-	// Grab out the draft pack price here
-	draftPack := cardCollection["draftpak-0000-0000-0000-000000000000"]
-	packCost = draftPack.plat
+	// Set our refresh timer to come back and do this again later
+	setPriceRefreshTimer()
+
+	// If we're not simply doing an update, grab out the draft pack price here
+	if !updatingData {
+		draftPack := cardCollection["draftpak-0000-0000-0000-000000000000"]
+		packCost = draftPack.plat
+	}
 	// And now let them know we're ready
-	fmt.Println("Beginning to listen for API events")
+	fmt.Println("Price data processed")
+}
+
+func setPriceRefreshTimer() {
+	// Set up a timer to refresh this information in a bit to mitigate against stale price data
+	if priceRefreshCacheTimer != nil {
+		// fmt.Printf("Stopping priceRefreshCacheTimer '%v'\n", priceRefreshCacheTimer)
+		priceRefreshCacheTimer.Stop()
+	}
+	priceRefreshCacheTimer = time.AfterFunc(priceRefreshTimerPeriod, getCardPriceInfo)
+
 }
 
 func main() {
@@ -834,6 +879,7 @@ func main() {
 	getCardPriceInfo()
 	// Read in our collection cache
 	readCollectionCache()
+	fmt.Println("Beginning to listen for API events")
 	// Register http handlers before starting the server
 	http.HandleFunc("/", incoming)
 	// Now that we've registered what we want, start it up
