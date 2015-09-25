@@ -53,7 +53,7 @@ type Card struct {
 }
 
 // The Version of the program so we can figure out if we're using the most recent version
-var programVersion = "0.3"
+var programVersion = "0.4"
 
 // Vars so we can figure out what our update URL is
 var programName = os.Args[0]
@@ -317,7 +317,7 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	c := cardCollection[uuid]
 	info := getCardInfo(c)
 	fmt.Printf("++ Pack [%v]: You Drafted %v\n", packNum, info)
-	packValue += c.plat
+	// packValue += c.plat
 	// Put something here to remove c.name from packContents[packNum]
 	if packNum > 8 {
 		prevCard := fmt.Sprintf("'%v', ", c.name)
