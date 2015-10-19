@@ -72,6 +72,7 @@ var Config = make(map[string]string)
 // And some general variables we'll use to keep track of things
 var GameStartTime = time.Now()
 
+var statisticsString = ""
 var packValue int
 var packCost int
 var packNum int
@@ -324,10 +325,11 @@ func draftCardPickedEvent(f map[string]interface{}) {
 		previousContents[packNum] = strings.Replace(previousContents[packNum], prevCard, "", 1)
 	}
 	if packNum == 1 {
-		packProfit := packValue - packCost
-		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
-		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
-		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
+		fmt.Printf("%s", statisticsString)
+		//		packProfit := packValue - packCost
+		//		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
+		//		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
+		//		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
 
 	}
 	// And unset this in case we're done
@@ -398,9 +400,7 @@ func draftPackEvent(f map[string]interface{}) {
 		packValue += worthMostPlat.plat
 		packProfit := packValue - packCost
 		sessionProfit += packProfit
-		// fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
-		// fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
-		// fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
+		statisticsString = fmt.Sprintf("==========================    PACK AND SESSION STATISTICS    ==========================\n Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n==========================    PACK AND SESSION STATISTICS    ==========================\n", packValue, packProfit, sessionProfit)
 	}
 }
 
