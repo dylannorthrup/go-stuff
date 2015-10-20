@@ -318,7 +318,7 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	c := cardCollection[uuid]
 	info := getCardInfo(c)
 	fmt.Printf("++ Pack [%v]: You Drafted %v\n", packNum, info)
-	// packValue += c.plat
+	packValue += c.plat
 	// Put something here to remove c.name from packContents[packNum]
 	if packNum > 8 {
 		prevCard := fmt.Sprintf("'%v', ", c.name)
