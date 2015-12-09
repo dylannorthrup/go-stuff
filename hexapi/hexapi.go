@@ -22,6 +22,11 @@ package main
 //  + Check for updated versions by checking remote URL
 //  + Configurable version URLs
 //  + Detect and Ignore duplicate API messages
+//  - Deal with missing card info in price/UUID download
+//	- Print out sorted lists of tied cards????
+//  - Print out Gold and Plat value of collections
+//  - Do deck summaries on Save Deck event
+//  - Show similar items with same major (and/or minor) values for comparis
 //
 //  Stretch Goals
 //  - Post card data to remote URL (for collating draw data)
@@ -53,7 +58,7 @@ type Card struct {
 }
 
 // The Version of the program so we can figure out if we're using the most recent version
-var programVersion = "0.4"
+var programVersion = "0.5"
 
 // Vars so we can figure out what our update URL is
 var programName = os.Args[0]
@@ -213,17 +218,27 @@ func changeCardCount(uuid string, i int) {
 	}
 	// fmt.Println("No draft cards for this type. Handing off to rawChangeCardCount")
 	// if not, go ahead and call the dangerous function
+	if Config["debug_collection_update"] == "true" {
+		c := cardCollection[uuid]
+		fmt.Printf("INFO: [changeCardCount] Changing qty for '%v' by %v (new qty %v)\n", c.name, i, c.qty)
+	}
 	rawChangeCardCount(uuid, i)
 }
 func rawChangeCardCount(uuid string, i int) {
+	// If the card is in the system, update it
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.qty += i
-		if loadingCacheOrPriceData == false {
+		if loadingCacheOrPriceData == false || Config["debug_collection_update"] == "true" {
 			fmt.Printf("INFO: New collection qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
 		}
 		cardCollection[uuid] = c
+	} else {
+		if loadingCacheOrPriceData == false || Config["debug_collection_update"] == "true" {
+			fmt.Printf("INFO: No card with UUID of %v exists. Cannot change its quantity\n.", uuid)
+		}
 	}
+
 }
 func incrementDraftCardsPicked(uuid string) {
 	changeDraftCardsCount(uuid, 1)
@@ -298,11 +313,22 @@ func getCardInfo(c Card) string {
 	return fmt.Sprintf("'%v' [Qty: %v] - %vp and %vg", c.name, c.qty, c.plat, c.gold)
 }
 
-// Return the UUID from a big of JSON
-func getCardUUID(f map[string]interface{}) string {
+func getCardCount(uuid string) int {
+	return cardCollection[uuid].qty
+}
+
+// Return the UUID from a big pile of JSON
+func getCardUUIDFromJSON(f map[string]interface{}) string {
 	uuidMap := f["Guid"].(map[string]interface{})
 	uuid := uuidMap["m_Guid"].(string)
 	return uuid
+}
+
+// Return the Card name from a big pile of JSON
+func getCardNameFromJSON(f map[string]interface{}) string {
+	// uuidMap := f["Guid"].(map[string]interface{})
+	name := f["Name"].(string)
+	return name
 }
 
 // Handle picking of Draft Cards
@@ -312,7 +338,7 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	// Make sure we know we're drafting
 	currentlyDrafting = true
 	card := f["Card"].(map[string]interface{})
-	uuid := getCardUUID(card)
+	uuid := getCardUUIDFromJSON(card)
 	incrementCardCount(uuid)
 	incrementDraftCardsPicked(uuid)
 	c := cardCollection[uuid]
@@ -346,21 +372,21 @@ func draftPackEvent(f map[string]interface{}) {
 	// We need this for stuff when the DraftCard event fires
 	packNum = numCards
 	// reset the pack value for a new pack along with all the pack tracking arrays
-	if numCards == 15 {
+	if numCards == 17 {
 		packValue = 0
 		for n := range packContents {
 			packContents[n] = ""
 			previousContents[n] = ""
 		}
 	}
-	if numCards < 8 {
+	if numCards < 10 {
 		prevNum := numCards + 8
 		previousContents[numCards] = packContents[prevNum]
 	}
 	// Do some computations to figure out the optimal picks for plat, gold and filling out our collection
 	for _, u := range cards {
 		card := u.(map[string]interface{})
-		uuid := getCardUUID(card)
+		uuid := getCardUUIDFromJSON(card)
 		c := cardCollection[uuid]
 		// If this is the first time through, these will be nil
 		if haveLeastOf.name == "bogusvalue" {
@@ -456,13 +482,17 @@ func cacheCollection() {
 	defer f.Close()
 
 	// Look through cards to write out key/value data
+	var collectionGoldValue = 0
+	var collectionPlatValue = 0
 	for k, v := range cardCollection {
 		if v.qty == 0 {
 			continue
 		}
 		line := fmt.Sprintf("%v : %v\n", k, v.qty)
 		f.WriteString(line)
-		// fmt.Printf(".")
+		// And something to keep track of and print out our collection value
+		collectionPlatValue = collectionPlatValue + (v.plat * v.qty)
+		collectionGoldValue = collectionGoldValue + (v.gold * v.qty)
 	}
 	f.Sync()
 	// fmt.Println("! Caching of collection is complete")
@@ -494,6 +524,26 @@ func cacheCollection() {
 			}
 		}
 	}
+	if Config["show_collection_value"] == "true" {
+		fmt.Printf("Your collection is currently valued at %v plat and %v gold\n", collectionPlatValue, collectionGoldValue)
+	}
+}
+
+func logAPICall(line string) {
+	// Open file. If it exists right now, remove that before creating a new one
+	logAPIFile := Config["api_log_file"]
+	f, err := os.OpenFile(logAPIFile, os.O_RDWR|os.O_APPEND, 0660)
+	if err != nil {
+		fmt.Printf("Could not append to file %v for writing: %v\n", logAPIFile, err)
+		return
+	}
+	fmt.Printf("Writing API call to file '%v'.\n", logAPIFile)
+	// Defer our close
+	defer f.Close()
+
+	// Write out the line
+	f.WriteString(line + "\n")
+	f.Sync()
 }
 
 func listCardsSortedByName() []string {
@@ -557,15 +607,26 @@ func collectionEvent(f map[string]interface{}) {
 		// fmt.Print("Handling Update Collection message\n")
 	}
 	// Ok, let's extract the cards and update the numbers of each card.
-	// TODO: cache that locally (in case we need to restart for some reason)
 	for _, u := range added {
+
 		card := u.(map[string]interface{})
-		uuid := getCardUUID(card)
-		incrementCardCount(uuid)
+		uuid := getCardUUIDFromJSON(card)
+		if _, ok := cardCollection[uuid]; ok {
+			// Card exists. Do a straight update
+			incrementCardCount(uuid)
+		} else {
+			// 	// If it doesn't exist, create a new card with appropriate values and add it to the map
+			name := getCardNameFromJSON(card)
+			c := Card{name: name, uuid: uuid, plat: 0, gold: 0}
+			cardCollection[uuid] = c
+		}
+		if Config["debug_collection_update"] == "true" {
+			fmt.Printf("INFO: [collectionEvent] Adding [%s] %s for count of %d in collection\n", uuid, card, getCardCount(uuid))
+		}
 	}
 	for _, u := range removed {
 		card := u.(map[string]interface{})
-		uuid := getCardUUID(card)
+		uuid := getCardUUIDFromJSON(card)
 		decrementCardCount(uuid)
 	}
 	// And, reset this (even if it wasn't set, we'll make sure it gets unset)
@@ -637,6 +698,10 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	lastAPIMessage = string(body)
+	// If we want to log API calls, make use of the lastAPIMessage we just set and log it here
+	if Config["log_api_calls"] == "true" {
+		logAPICall(lastAPIMessage)
+	}
 	//	fmt.Println("REPLY BODY: ", string(body))
 	//err = json.Unmarshal(body, &t)
 	var f map[string]interface{}
@@ -865,7 +930,23 @@ func setPriceRefreshTimer() {
 		priceRefreshCacheTimer.Stop()
 	}
 	priceRefreshCacheTimer = time.AfterFunc(priceRefreshTimerPeriod, getCardPriceInfo)
+}
 
+// Make sure we don't fill up our disk by logging API data
+func truncateAPILogFile() {
+	if Config["log_api_calls"] == "true" {
+		logAPIFile := Config["api_log_file"]
+		if _, err := os.Stat(logAPIFile); err == nil {
+			f, err := os.Create(logAPIFile)
+			if err != nil {
+				fmt.Printf("Could not create file %v for writing: %v\n", logAPIFile, err)
+				return
+			}
+			f.Close()
+		}
+		fmt.Printf("Truncating API log file '%s' so we don't fill up the disk\n", Config["api_log_file"])
+		os.Truncate(Config["api_log_file"], 0)
+	}
 }
 
 func main() {
@@ -879,6 +960,8 @@ func main() {
 	getCardPriceInfo()
 	// Read in our collection cache
 	readCollectionCache()
+	// Run this to truncate API log file if we are logging
+	truncateAPILogFile()
 	fmt.Println("Beginning to listen for API events")
 	// Register http handlers before starting the server
 	http.HandleFunc("/", incoming)
