@@ -58,7 +58,7 @@ type Card struct {
 }
 
 // The Version of the program so we can figure out if we're using the most recent version
-var programVersion = "0.5"
+var programVersion = "0.6"
 
 // Vars so we can figure out what our update URL is
 var programName = os.Args[0]
@@ -81,8 +81,8 @@ var statisticsString = ""
 var packValue int
 var packCost int
 var packNum int
-var packContents [16]string
-var previousContents [16]string
+var packContents [18]string
+var previousContents [18]string
 var draftCardsPicked = make(map[string]int)
 var sessionProfit int
 var lastAPIMessage string
