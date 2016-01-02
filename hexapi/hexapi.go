@@ -343,6 +343,10 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	c := cardCollection[uuid]
 	info := getCardInfo(c)
 	fmt.Printf("++ Pack [%v]: You Drafted %v\n", packNum, info)
+	if Config["debug_pack_value"] == "true" {
+		fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Adding %v to current pack value of %v (should total %v)\n", c.plat, packValue, c.plat+packValue)
+	}
+
 	packValue += c.plat
 	// Put something here to remove c.name from packContents[packNum]
 	if packNum > 8 {
@@ -350,7 +354,14 @@ func draftCardPickedEvent(f map[string]interface{}) {
 		previousContents[packNum] = strings.Replace(previousContents[packNum], prevCard, "", 1)
 	}
 	if packNum == 1 {
+		if Config["debug_pack_value"] == "true" {
+			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session profit prior to modification: %v\n", sessionProfit)
+		}
 		packProfit := packValue - packCost
+		sessionProfit += packProfit
+		if Config["debug_pack_value"] == "true" {
+			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session profit after modification: %v (pack value of %v and pack cost of %v)\n", sessionProfit, packValue, packCost)
+		}
 		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
 		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
 		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
@@ -424,12 +435,6 @@ func draftPackEvent(f map[string]interface{}) {
 	fmt.Printf("\tWorth most plat: %v\n", mostPlat)
 	fmt.Printf("\tWorth most gold: %v\n", mostGold)
 	fmt.Printf("\tHave least of: %v\n", haveLeast)
-	// Now that we've done the comparison, print out our ROI for the pack
-	if numCards == 1 {
-		packValue += worthMostPlat.plat
-		packProfit := packValue - packCost
-		sessionProfit += packProfit
-	}
 }
 
 // Comparison functions between cards
