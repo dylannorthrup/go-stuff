@@ -77,7 +77,6 @@ var Config = make(map[string]string)
 // And some general variables we'll use to keep track of things
 var GameStartTime = time.Now()
 
-var statisticsString = ""
 var packValue int
 var packCost int
 var packNum int
@@ -351,11 +350,10 @@ func draftCardPickedEvent(f map[string]interface{}) {
 		previousContents[packNum] = strings.Replace(previousContents[packNum], prevCard, "", 1)
 	}
 	if packNum == 1 {
-		fmt.Printf("%s", statisticsString)
-		//		packProfit := packValue - packCost
-		//		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
-		//		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
-		//		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
+		packProfit := packValue - packCost
+		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
+		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
+		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
 
 	}
 	// And unset this in case we're done
@@ -384,6 +382,7 @@ func draftPackEvent(f map[string]interface{}) {
 		previousContents[numCards] = packContents[prevNum]
 	}
 	// Do some computations to figure out the optimal picks for plat, gold and filling out our collection
+	contentsInfo := ""
 	for _, u := range cards {
 		card := u.(map[string]interface{})
 		uuid := getCardUUIDFromJSON(card)
@@ -401,7 +400,9 @@ func draftPackEvent(f map[string]interface{}) {
 		haveLeastOf = leastQty(haveLeastOf, c)
 		worthMostGold = mostGold(worthMostGold, c)
 		worthMostPlat = mostPlat(worthMostPlat, c)
+		// The first time we have a blank comma at the front, but we remove that later
 		packContents[numCards] = fmt.Sprintf("%v, '%v'", packContents[numCards], c.name)
+		contentsInfo = fmt.Sprintf("%v, '%v [%v - %vp/%vg]'", contentsInfo, c.name, c.qty, c.plat, c.gold)
 
 		// If we have 9 or more cards in pack, save what we've got so we've got so we can determine what others picked
 		if numCards < 8 {
@@ -409,8 +410,10 @@ func draftPackEvent(f map[string]interface{}) {
 			previousContents[numCards] = strings.Replace(previousContents[numCards], prevCard, "", 1)
 		}
 	}
+	// Curious why I'm doing this. Pretty sure it's to remove the leading ", "from the string
 	packContents[numCards] = strings.Replace(packContents[numCards], ", ", "", 1)
-	fmt.Printf("== Pack [%v] Contents: %v\n", numCards, packContents[numCards])
+	contentsInfo = strings.Replace(contentsInfo, ", ", "", 1)
+	fmt.Printf("== Pack [%v] Contents: %v\n", numCards, contentsInfo)
 	if numCards < 8 {
 		fmt.Printf("-- MISSING CARDS: %v\n", previousContents[numCards])
 	}
@@ -426,7 +429,6 @@ func draftPackEvent(f map[string]interface{}) {
 		packValue += worthMostPlat.plat
 		packProfit := packValue - packCost
 		sessionProfit += packProfit
-		statisticsString = fmt.Sprintf("==========================    PACK AND SESSION STATISTICS    ==========================\n Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n==========================    PACK AND SESSION STATISTICS    ==========================\n", packValue, packProfit, sessionProfit)
 	}
 }
 
@@ -508,7 +510,7 @@ func cacheCollection() {
 			fmt.Printf("Could not create file %v for writing: %v\n", csvFile, err)
 			return
 		}
-		fmt.Printf("Writing CSV card data to file '%v'.\n", csvFile)
+		fmt.Printf("Writing CSV card data to file '%v'.", csvFile)
 		// Defer our close
 		defer f.Close()
 
@@ -524,6 +526,7 @@ func cacheCollection() {
 			}
 		}
 	}
+	fmt.Printf("\n")
 	if Config["show_collection_value"] == "true" {
 		fmt.Printf("Your collection is currently valued at %v plat and %v gold\n", collectionPlatValue, collectionGoldValue)
 	}
@@ -936,7 +939,8 @@ func setPriceRefreshTimer() {
 func truncateAPILogFile() {
 	if Config["log_api_calls"] == "true" {
 		logAPIFile := Config["api_log_file"]
-		if _, err := os.Stat(logAPIFile); err == nil {
+		if _, err := os.Stat(logAPIFile); err != nil {
+			fmt.Printf("Creating API log file '%s' as it does not currently exist\n", Config["api_log_file"])
 			f, err := os.Create(logAPIFile)
 			if err != nil {
 				fmt.Printf("Could not create file %v for writing: %v\n", logAPIFile, err)
