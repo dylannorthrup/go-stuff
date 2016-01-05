@@ -22,11 +22,11 @@ package main
 //  + Check for updated versions by checking remote URL
 //  + Configurable version URLs
 //  + Detect and Ignore duplicate API messages
-//  - Deal with missing card info in price/UUID download
-//	- Print out sorted lists of tied cards????
-//  - Print out Gold and Plat value of collections
+//  + Deal with missing card info in price/UUID download
+//  + Print out details of individual cards in pack contents output
+//  + Print out Gold and Plat value of collections
 //  - Do deck summaries on Save Deck event
-//  - Show similar items with same major (and/or minor) values for comparis
+//	- Handle CardUpdated with ExtendedDart attributes
 //
 //  Stretch Goals
 //  - Post card data to remote URL (for collating draw data)
@@ -52,13 +52,14 @@ type Card struct {
 	name   string
 	uuid   string
 	qty    int
+	eaqty  int
 	rarity string
 	gold   int
 	plat   int
 }
 
 // The Version of the program so we can figure out if we're using the most recent version
-var programVersion = "0.6"
+var programVersion = "0.7"
 
 // Vars so we can figure out what our update URL is
 var programName = os.Args[0]
