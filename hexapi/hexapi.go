@@ -59,7 +59,7 @@ type Card struct {
 }
 
 // The Version of the program so we can figure out if we're using the most recent version
-var programVersion = "0.7"
+var programVersion = "0.8"
 
 // Vars so we can figure out what our update URL is
 var programName = os.Args[0]
@@ -89,6 +89,8 @@ var lastAPIMessage string
 
 var loadingCacheOrPriceData = false
 var currentlyDrafting = false
+
+var packSize = 17
 
 // Refresh price data every two hours
 var priceRefreshTimerPeriod = time.Hour * time.Duration(2)
@@ -382,14 +384,14 @@ func draftPackEvent(f map[string]interface{}) {
 	// We need this for stuff when the DraftCard event fires
 	packNum = numCards
 	// reset the pack value for a new pack along with all the pack tracking arrays
-	if numCards == 17 {
+	if numCards == packSize {
 		packValue = 0
 		for n := range packContents {
 			packContents[n] = ""
 			previousContents[n] = ""
 		}
 	}
-	if numCards < 10 {
+	if numCards < (packSize - 7) {
 		prevNum := numCards + 8
 		previousContents[numCards] = packContents[prevNum]
 	}
@@ -414,10 +416,10 @@ func draftPackEvent(f map[string]interface{}) {
 		worthMostPlat = mostPlat(worthMostPlat, c)
 		// The first time we have a blank comma at the front, but we remove that later
 		packContents[numCards] = fmt.Sprintf("%v, '%v'", packContents[numCards], c.name)
-		contentsInfo = fmt.Sprintf("%v, '%v [%v - %vp/%vg]'", contentsInfo, c.name, c.qty, c.plat, c.gold)
+		contentsInfo = fmt.Sprintf("%v\n\t'[%2d - %3dp/%3dg] %v'", contentsInfo, c.qty, c.plat, c.gold, c.name)
 
-		// If we have 9 or more cards in pack, save what we've got so we've got so we can determine what others picked
-		if numCards < 8 {
+		// If we have (packSize - 7) or more cards in pack, save what we've got so we've got so we can determine what others picked
+		if numCards < (packSize - 7) {
 			prevCard := fmt.Sprintf("'%v', ", c.name)
 			previousContents[numCards] = strings.Replace(previousContents[numCards], prevCard, "", 1)
 		}
@@ -426,7 +428,7 @@ func draftPackEvent(f map[string]interface{}) {
 	packContents[numCards] = strings.Replace(packContents[numCards], ", ", "", 1)
 	contentsInfo = strings.Replace(contentsInfo, ", ", "", 1)
 	fmt.Printf("== Pack [%v] Contents: %v\n", numCards, contentsInfo)
-	if numCards < 8 {
+	if numCards < (packSize - 7) {
 		fmt.Printf("-- MISSING CARDS: %v\n", previousContents[numCards])
 	}
 	mostGold := getCardInfo(worthMostGold)
