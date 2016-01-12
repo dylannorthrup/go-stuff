@@ -703,8 +703,22 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		panic("AIEEE: Could not readAll for req.Body")
 	}
-	// Check to see if the last API message
-	if lastAPIMessage == string(body) {
+	var f map[string]interface{}
+	err = json.Unmarshal(body, &f)
+	if err != nil {
+		panic("AIEEE: Could not Unmarshall the body")
+	}
+	//	fmt.Println("DEBUG: Unmarshall successful")
+	//	fmt.Println("DEBUG: Message is", f["Message"])
+	skipDupes := true
+	msg := f["Message"]
+	if msg == "Collection" {
+		if f["Action"] == "Update" {
+			skipDupes = false
+		}
+	}
+	// Check to see if the last API message is the same as this one (as long as we're not in a Collection Update)
+	if lastAPIMessage == string(body) && skipDupes {
 		// fmt.Println("INFO: Duplicate API Message. Discarding.")
 		return
 	}
@@ -713,16 +727,6 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	if Config["log_api_calls"] == "true" {
 		logAPICall(lastAPIMessage)
 	}
-	//	fmt.Println("REPLY BODY: ", string(body))
-	//err = json.Unmarshal(body, &t)
-	var f map[string]interface{}
-	err = json.Unmarshal(body, &f)
-	if err != nil {
-		panic("AIEEE: Could not Unmarshall the body")
-	}
-	//	fmt.Println("DEBUG: Unmarshall successful")
-	//	fmt.Println("DEBUG: Message is", f["Message"])
-	msg := f["Message"]
 	switch msg {
 	case "CardUpdated":
 		//		fmt.Printf("Got a Card Updated message\n")
