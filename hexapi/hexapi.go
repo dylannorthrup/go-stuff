@@ -796,7 +796,7 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 
 func loadDefaults() map[string]string {
 	retMap := make(map[string]string)
-	retMap["price_url"] = "http://doc-x.net/hex/all_prices_with_uuids.txt"
+	retMap["price_url"] = "http://doc-x.net/hex/all_prices_json.txt"
 	// May be able to get rid of this since we're getting uuids from above
 	retMap["aa_promo_url"] = "http://doc-x.net/hex/aa_promo_list.txt"
 	retMap["collection_file"] = "collection.out"
@@ -886,42 +886,63 @@ func getCardPriceInfo() {
 	// If we didn't have a problem retrieving the HTTP data, go ahead and process it
 	// Also, this shouldn't get set if we're reading in from a local file
 	if !gotHTTPError {
-		s := string(body)
-		lines := strings.Split(s, "\n")
-		re, _ := regexp.Compile(`^(.*?) \.\.\. ([\d\w-]+) \.\.\. (\d+) PLATINUM.* \.\.\. (\d+) GOLD`)
-		fmt.Println("Processing price data")
+		// s := string(body)
+		var f map[string]interface{}
+		err = json.Unmarshal(body, &f)
+		if err != nil {
+			panic("Could not Unmarshal price body")
+		}
+		// fmt.Println("Unmarshalled price Body")
+		cards := f["cards"].([]interface{})
+		// fmt.Println("Assigned cards from 'f' and made cj variable")
+		// Make some variables so we re-use them instead of re-creating them each run through
+		var c = make(map[string]interface{})
+		var name string
+		var rarity string
+		var uuid string
+		var p = make(map[string]interface{})
+		var plat int
+		var g = make(map[string]interface{})
+		var gold int
 
 		// Reduce the spamminess of loading collection info
 		loadingCacheOrPriceData = true
 
-		// We skip the first line since it's a header line
-		for _, line := range lines[1:] {
-			result := re.FindStringSubmatch(line)
-			if len(result) > 0 {
-				name := result[1]
-				uuid := result[2]
-				plat, _ := strconv.Atoi(result[3])
-				gold, _ := strconv.Atoi(result[4])
-				//			fmt.Printf("Name: %v - %v - %vp, %vg\n", name, uuid, plat, gold)
-				// We test to see if this uuid is already in our collection. If so, update it
-				if _, ok := cardCollection[uuid]; ok {
-					// We can't update directly, so we create a new card, modify it's values, then reassign it back to
-					// to cardCollection
-					c := cardCollection[uuid]
-					c.name = name
-					c.uuid = uuid
-					c.plat = plat
-					c.gold = gold
-					cardCollection[uuid] = c
-				} else {
-					// If it doesn't exist, create a new card with appropriate values and add it to the map
-					c := Card{name: name, uuid: uuid, plat: plat, gold: gold}
-					cardCollection[uuid] = c
-					// And update our name to uuid map
-					ntum[name] = uuid
-				}
+		for _, card := range cards[1:] {
+			c = card.(map[string]interface{})
+			// Verify this actually has a thing name. If it doesn't, go to the next thing
+			if c["name"] == nil {
+				continue
+			}
+			// Assign our variables from the interface derived from our JSON blob
+			name = c["name"].(string)
+			rarity = c["rarity"].(string)
+			uuid = c["uuid"].(string)
+			p = c["PLATINUM"].(map[string]interface{})
+			plat = int(p["avg"].(float64))
+			g = c["GOLD"].(map[string]interface{})
+			gold = int(g["avg"].(float64))
+			// fmt.Printf("Working on '%v'\nName is '%v', rarity is %v and uuid is %v and avg plat of %v and avg gold of %v\n", card, name, rarity, uuid, plat, gold)
+			// If we've already got a card with that UUID in the cardCollection, update the info
+			if _, ok := cardCollection[uuid]; ok {
+				// We can't update directly, so we create a new card, modify it's values, then reassign it back to
+				// to cardCollection
+				c := cardCollection[uuid]
+				c.name = name
+				c.uuid = uuid
+				c.plat = plat
+				c.gold = gold
+				c.rarity = rarity
+				cardCollection[uuid] = c
+			} else {
+				// If it doesn't exist, create a new card with appropriate values and add it to the map
+				c := Card{name: name, uuid: uuid, plat: plat, gold: gold, rarity: rarity}
+				cardCollection[uuid] = c
+				// And update our name to uuid map
+				ntum[name] = uuid
 			}
 		}
+
 		// Now, turn back on info messages for changes in card counts
 		loadingCacheOrPriceData = false
 	}
