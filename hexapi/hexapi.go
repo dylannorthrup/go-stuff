@@ -79,12 +79,16 @@ var Config = make(map[string]string)
 var GameStartTime = time.Now()
 
 var packValue int
+var packGoldValue int
 var packCost int
+var packGoldCost int
+var goldPlatRatio int // How many gold for a single plat
 var packNum int
 var packContents [18]string
 var previousContents [18]string
 var draftCardsPicked = make(map[string]int)
-var sessionProfit int
+var sessionPlatProfit int
+var sessionGoldProfit int
 var lastAPIMessage string
 
 var loadingCacheOrPriceData = false
@@ -351,6 +355,7 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	}
 
 	packValue += c.plat
+	packGoldValue += c.gold
 	// Put something here to remove c.name from packContents[packNum]
 	if packNum > 8 {
 		prevCard := fmt.Sprintf("'%v', ", c.name)
@@ -358,15 +363,18 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	}
 	if packNum == 1 {
 		if Config["debug_pack_value"] == "true" {
-			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session profit prior to modification: %v\n", sessionProfit)
+			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session Plat profit prior to modification: %v\n", sessionPlatProfit)
+			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session Gold profit prior to modification: %v\n", sessionGoldProfit)
 		}
 		packProfit := packValue - packCost
-		sessionProfit += packProfit
+		packGoldProfit := packGoldValue - packGoldCost
+		sessionPlatProfit += packProfit
 		if Config["debug_pack_value"] == "true" {
-			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session profit after modification: %v (pack value of %v and pack cost of %v)\n", sessionProfit, packValue, packCost)
+			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session profit after modification: %v (pack value of %v and pack cost of %v)\n", sessionPlatProfit, packValue, packCost)
+			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session profit after modification: %v (pack value of %v and pack cost of %v)\n", sessionGoldProfit, packGoldValue, packGoldCost)
 		}
 		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
-		fmt.Printf("Total pack value: %v plat. Pack profit is %v plat and total session profit is %v plat.\n", packValue, packProfit, sessionProfit)
+		fmt.Printf("Total pack value: %v plat (%v gold). Pack profit is %vp (%vg) and total session profit is %vp (%vg).\n", packValue, packGoldValue, packProfit, packGoldProfit, sessionPlatProfit, sessionGoldProfit)
 		fmt.Println("==========================    PACK AND SESSION STATISTICS    ==========================")
 
 	}
@@ -838,11 +846,8 @@ func readConfig(fname string, config map[string]string) map[string]string {
 
 // Retrieve card prices and AA card info to prime the collection pump
 func getCardPriceInfo() {
-	//  Retrieve from http://doc-x.net/hex/all_prices_with_uuids.txt
-	//  Format:
-	//    Card Name ... UUID ... Avg_price PLATINUM [# of Auctions] ... Avg_price GOLD [# of Auctions]
-	//  Example:
-	//    Adamanthain Scrivener ... d2222e6c-c8f8-4dad-b6dl-c0aacd3fc8f0 ...  4 PLATINUM [23 Auctions] ... 187 GOLD [231 Auctions]
+	//  Retrieve from http://doc-x.net/hex/all_prices_json.txt
+
 	var body []byte
 	var err error
 	updatingData := false
@@ -956,6 +961,38 @@ func getCardPriceInfo() {
 	if !updatingData {
 		draftPack := cardCollection["draftpak-0000-0000-0000-000000000000"]
 		packCost = draftPack.plat
+		packGoldCost = draftPack.gold
+		goldPlatRatio = int(draftPack.gold / draftPack.plat)
+	}
+
+	// If this has been set, go through all cards, find any with 0 for gold or plat value, then compute it from the other value.
+	// If both are 0, set value to 1g and 1p.
+	if goldPlatRatio > 0 {
+		for k, v := range cardCollection {
+			if v.plat == 0 && v.gold == 0 {
+				c := cardCollection[k]
+				c.plat = 1
+				c.gold = 1
+				cardCollection[k] = c
+			}
+			if v.plat == 0 {
+				c := cardCollection[k]
+				c.plat = int(c.gold / goldPlatRatio)
+				// In cases where this is actually zero after the comparison, go ahead and make it a minimum of 1
+				if c.plat == 0 {
+					c.plat = 1
+				}
+				cardCollection[k] = c
+				continue
+			}
+			if v.gold == 0 {
+				c := cardCollection[k]
+				c.gold = c.plat * goldPlatRatio
+				cardCollection[k] = c
+				continue
+			}
+		}
+
 	}
 	// And now let them know we're ready
 	fmt.Println("Price data processed")
