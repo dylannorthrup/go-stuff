@@ -414,9 +414,9 @@ func draftPackEvent(f map[string]interface{}) {
 		haveLeastOf = leastQty(haveLeastOf, c)
 		worthMostGold = mostGold(worthMostGold, c)
 		worthMostPlat = mostPlat(worthMostPlat, c)
-		// The first time we have a blank comma at the front, but we remove that later
-		packContents[numCards] = fmt.Sprintf("%v, '%v'", packContents[numCards], c.name)
-		contentsInfo = fmt.Sprintf("%v\n\t'[%2d - %3dp/%3dg] %v'", contentsInfo, c.qty, c.plat, c.gold, c.name)
+		// The first time we have a blank comma at the end, but we remove that later
+		packContents[numCards] = fmt.Sprintf("'%v', %v", c.name, packContents[numCards])
+		contentsInfo = fmt.Sprintf("'[%v %2d - %3dp/%3dg] %v'\n\t%v", c.rarity, c.qty, c.plat, c.gold, c.name, contentsInfo)
 
 		// If we have (packSize - 7) or more cards in pack, save what we've got so we've got so we can determine what others picked
 		if numCards < (packSize - 7) {
@@ -427,7 +427,7 @@ func draftPackEvent(f map[string]interface{}) {
 	// Curious why I'm doing this. Pretty sure it's to remove the leading ", "from the string
 	packContents[numCards] = strings.Replace(packContents[numCards], ", ", "", 1)
 	contentsInfo = strings.Replace(contentsInfo, ", ", "", 1)
-	fmt.Printf("== Pack [%v] Contents: %v\n", numCards, contentsInfo)
+	fmt.Printf("== Pack [%v] Contents:\n\t%v", numCards, contentsInfo)
 	if numCards < (packSize - 7) {
 		fmt.Printf("-- MISSING CARDS: %v\n", previousContents[numCards])
 	}
@@ -899,6 +899,7 @@ func getCardPriceInfo() {
 		var c = make(map[string]interface{})
 		var name string
 		var rarity string
+		var fullRarity string
 		var uuid string
 		var p = make(map[string]interface{})
 		var plat int
@@ -908,7 +909,7 @@ func getCardPriceInfo() {
 		// Reduce the spamminess of loading collection info
 		loadingCacheOrPriceData = true
 
-		for _, card := range cards[1:] {
+		for _, card := range cards[:] {
 			c = card.(map[string]interface{})
 			// Verify this actually has a thing name. If it doesn't, go to the next thing
 			if c["name"] == nil {
@@ -916,7 +917,8 @@ func getCardPriceInfo() {
 			}
 			// Assign our variables from the interface derived from our JSON blob
 			name = c["name"].(string)
-			rarity = c["rarity"].(string)
+			fullRarity = c["rarity"].(string)
+			rarity = fullRarity[:1]
 			uuid = c["uuid"].(string)
 			p = c["PLATINUM"].(map[string]interface{})
 			plat = int(p["avg"].(float64))
