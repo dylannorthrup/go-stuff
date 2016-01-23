@@ -317,6 +317,9 @@ func printCardInfo(c Card) {
 }
 
 func getCardInfo(c Card) string {
+	if Config["detailed_card_info"] == "true" {
+		return fmt.Sprintf("'[%v] %v' %v [Qty: %v] - %vp and %vg", c.rarity, c.name, c.uuid, c.qty, c.plat, c.gold)
+	}
 	return fmt.Sprintf("'%v' [Qty: %v] - %vp and %vg", c.name, c.qty, c.plat, c.gold)
 }
 
@@ -725,6 +728,15 @@ func saveDeckEvent(f map[string]interface{}) {
 	fmt.Println("In function of saveDeckEvent")
 }
 
+func dumpRequest(rw http.ResponseWriter, req *http.Request) {
+	//	body, err := ioutil.ReadAll(req.Body)
+	//	if err != nil {
+	//		panic("AIEEE: Could not readAll for req.Body")
+	//	}
+	fmt.Println("Request to print collection recieved.")
+	printCollection()
+}
+
 func incoming(rw http.ResponseWriter, req *http.Request) {
 	body, err := ioutil.ReadAll(req.Body)
 	if err != nil {
@@ -795,29 +807,6 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 		playerUpdatedEvent()
 	default:
 		fmt.Printf("Don't know how to handle message '%v'\n", msg)
-		//}
-		//	for k, v := range f {
-		//		fmt.Printf("working on key %v with value %v\n", k, v)
-		//		switch vv := v.(type) {
-		//		case string:
-		//			fmt.Println(k, "is string", vv)
-		//		case float64:
-		//			fmt.Println(k, "is float64", vv)
-		//		case int:
-		//			fmt.Println(k, "is int", vv)
-		//		case map[string]interface{}:
-		//			fmt.Println(k, "is a map", vv)
-		//			for i, u := range vv {
-		//				fmt.Println("\t", i, u)
-		//			}
-		//		case []interface{}:
-		//			fmt.Println(k, "is an array:")
-		//			for i, u := range vv {
-		//				fmt.Println("\t", i, u)
-		//			}
-		//		default:
-		//			fmt.Println(k, "is of a type,", reflect.TypeOf(vv), ", I don't know how to handle: ", vv)
-		//		}
 	}
 }
 
@@ -1060,6 +1049,7 @@ func main() {
 	fmt.Println("Beginning to listen for API events")
 	// Register http handlers before starting the server
 	http.HandleFunc("/", incoming)
+	http.HandleFunc("/dump", dumpRequest)
 	// Now that we've registered what we want, start it up
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }
