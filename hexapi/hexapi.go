@@ -230,6 +230,7 @@ func changeCardCount(uuid string, i int) {
 	}
 	rawChangeCardCount(uuid, i)
 }
+
 func rawChangeCardCount(uuid string, i int) {
 	// If the card is in the system, update it
 	if _, ok := cardCollection[uuid]; ok {
@@ -627,16 +628,34 @@ func collectionEvent(f map[string]interface{}) {
 	}
 	// Ok, let's extract the cards and update the numbers of each card.
 	for _, u := range added {
-
 		card := u.(map[string]interface{})
 		uuid := getCardUUIDFromJSON(card)
+		name := ""
 		if _, ok := cardCollection[uuid]; ok {
 			// Card exists. Do a straight update
 			incrementCardCount(uuid)
 		} else {
-			// 	// If it doesn't exist, create a new card with appropriate values and add it to the map
-			name := getCardNameFromJSON(card)
-			c := Card{name: name, uuid: uuid, plat: 0, gold: 0}
+			// If it doesn't exist, create a new card with appropriate values and add it to the map
+			name = getCardNameFromJSON(card)
+			// Make up a bogus rarity
+			rarity := "?"
+			// See if we've already got another version of this card in our list
+			if _, ok := ntum[name]; ok {
+				// We have a card with a different UUID and the same name. That means this card
+				// is likely an AA.  We'll double check and add the new card as appropriate.
+				if strings.Contains(name[len(name)-3:], " AA") {
+					name = name[len(name)-3:]
+				} else {
+
+					newName := name + " AA"
+					rarity = "E"
+					fmt.Printf("While adding missing card, changing name of '%v' to '%v' because its rarity is '%v'\n", name, newName, rarity)
+					name = newName
+				}
+			}
+			// If we don't have pricing, set plat and gold to 1. Also, set qty to 1 so we don't have
+			// to do an 'incrementCardCount(uuid) afterward.
+			c := Card{name: name, uuid: uuid, plat: 1, gold: 1, rarity: rarity, qty: 1}
 			cardCollection[uuid] = c
 		}
 		if Config["debug_collection_update"] == "true" {
