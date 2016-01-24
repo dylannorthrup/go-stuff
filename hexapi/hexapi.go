@@ -485,10 +485,8 @@ func mostGold(c1, c2 Card) Card {
 
 // Something we use to write out a cache of our collection
 func cacheCollection() {
-	// fmt.Printf("Entered cacheCollection() with timer of %v\n", collectionCacheTimer)
 	// First thing we do is stop the timer
 	collectionCacheTimer.Stop()
-	// fmt.Printf("collectionCacheTimer stopped: %v\n", collectionCacheTimer)
 	// Open file. If it exists right now, remove that before creating a new one
 	cacheFile := Config["collection_file"]
 	if _, err := os.Stat(cacheFile); err == nil {
@@ -517,7 +515,6 @@ func cacheCollection() {
 		collectionGoldValue = collectionGoldValue + (v.gold * v.qty)
 	}
 	f.Sync()
-	// fmt.Println("! Caching of collection is complete")
 
 	// If the user asked us to cache a CSV file, go ahead and accomodate them
 	if Config["export_csv"] == "true" {
@@ -539,9 +536,12 @@ func cacheCollection() {
 		// Then use that array to print out card info in Alphabetical order
 		for _, name := range nmk {
 			uuid := ntum[name]
-			entry := cardCollection[uuid]
-			if entry.qty > 0 {
-				line := fmt.Sprintf("\"%v\",%v\n", entry.name, entry.qty)
+			c := cardCollection[uuid]
+			if Config["detailed_card_info"] == "true" {
+				fmt.Printf("CSV caching '%v [%v]' with qty %v\n", c.name, c.uuid, c.qty)
+			}
+			if c.qty > 0 {
+				line := fmt.Sprintf("\"%v\",%v\n", c.name, c.qty)
 				f.WriteString(line)
 			}
 		}
@@ -633,6 +633,9 @@ func collectionEvent(f map[string]interface{}) {
 	for _, u := range added {
 		card := u.(map[string]interface{})
 		uuid := getCardUUIDFromJSON(card)
+		if uuid == "00000000-0000-0000-0000-000000000000" {
+			continue
+		}
 		name := ""
 		if _, ok := cardCollection[uuid]; ok {
 			// Card exists. Do a straight update
