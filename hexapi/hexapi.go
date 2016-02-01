@@ -59,7 +59,7 @@ type Card struct {
 }
 
 // The Version of the program so we can figure out if we're using the most recent version
-var programVersion = "0.8"
+var programVersion = "0.9"
 
 // Vars so we can figure out what our update URL is
 var programName = os.Args[0]
@@ -80,6 +80,8 @@ var GameStartTime = time.Now()
 
 var packValue int
 var packGoldValue int
+var collectionGoldValue = 0
+var collectionPlatValue = 0
 var packCost int
 var packGoldCost int
 var goldPlatRatio int // How many gold for a single plat
@@ -373,6 +375,7 @@ func draftCardPickedEvent(f map[string]interface{}) {
 		packProfit := packValue - packCost
 		packGoldProfit := packGoldValue - packGoldCost
 		sessionPlatProfit += packProfit
+		sessionGoldProfit += packGoldProfit
 		if Config["debug_pack_value"] == "true" {
 			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session profit after modification: %v (pack value of %v and pack cost of %v)\n", sessionPlatProfit, packValue, packCost)
 			fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Session profit after modification: %v (pack value of %v and pack cost of %v)\n", sessionGoldProfit, packGoldValue, packGoldCost)
@@ -502,17 +505,12 @@ func cacheCollection() {
 	defer f.Close()
 
 	// Look through cards to write out key/value data
-	var collectionGoldValue = 0
-	var collectionPlatValue = 0
 	for k, v := range cardCollection {
 		if v.qty == 0 {
 			continue
 		}
 		line := fmt.Sprintf("%v : %v\n", k, v.qty)
 		f.WriteString(line)
-		// And something to keep track of and print out our collection value
-		collectionPlatValue = collectionPlatValue + (v.plat * v.qty)
-		collectionGoldValue = collectionGoldValue + (v.gold * v.qty)
 	}
 	f.Sync()
 
@@ -548,7 +546,7 @@ func cacheCollection() {
 	}
 	fmt.Printf("\n")
 	if Config["show_collection_value"] == "true" {
-		fmt.Printf("Your collection is currently valued at %v plat and %v gold\n", collectionPlatValue, collectionGoldValue)
+		printCollectionValue()
 	}
 }
 
@@ -732,12 +730,29 @@ func saveDeckEvent(f map[string]interface{}) {
 }
 
 func dumpRequest(rw http.ResponseWriter, req *http.Request) {
-	//	body, err := ioutil.ReadAll(req.Body)
-	//	if err != nil {
-	//		panic("AIEEE: Could not readAll for req.Body")
-	//	}
 	fmt.Println("Request to print collection recieved.")
 	printCollection()
+}
+
+func valueRequest(rw http.ResponseWriter, req *http.Request) {
+	fmt.Println("Request to print value of collection recieved.")
+	printCollectionValue()
+}
+
+func printCollectionValue() {
+	// Zero out the gold and plat values
+	collectionGoldValue = 0
+	collectionPlatValue = 0
+	for _, v := range cardCollection {
+		// Skip cards that we don't have any of
+		if v.qty == 0 {
+			continue
+		}
+		// Add the appropriate values to the appropriate variables
+		collectionPlatValue = collectionPlatValue + (v.plat * v.qty)
+		collectionGoldValue = collectionGoldValue + (v.gold * v.qty)
+	}
+	fmt.Printf("Your collection is currently valued at %v plat and %v gold\n", collectionPlatValue, collectionGoldValue)
 }
 
 func incoming(rw http.ResponseWriter, req *http.Request) {
@@ -934,7 +949,11 @@ func getCardPriceInfo() {
 			// Assign our variables from the interface derived from our JSON blob
 			name = c["name"].(string)
 			fullRarity = c["rarity"].(string)
-			rarity = fullRarity[:1]
+			if len(fullRarity) > 0 {
+				rarity = fullRarity[:1]
+			} else {
+				rarity = "?"
+			}
 			uuid = c["uuid"].(string)
 			p = c["PLATINUM"].(map[string]interface{})
 			plat = int(p["avg"].(float64))
@@ -1053,6 +1072,7 @@ func main() {
 	// Register http handlers before starting the server
 	http.HandleFunc("/", incoming)
 	http.HandleFunc("/dump", dumpRequest)
+	http.HandleFunc("/value", valueRequest)
 	// Now that we've registered what we want, start it up
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }
