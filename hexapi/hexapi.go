@@ -58,6 +58,39 @@ type Card struct {
 	plat   int
 }
 
+// Player variable that we'll be using in tracking game state
+type Player struct {
+	name      string
+	health    int
+	id        int
+	resources int
+	blood     int
+	sapphire  int
+	wild      int
+	diamond   int
+	ruby      int
+}
+
+// Card in game that we're tracking
+type gameCard struct {
+	controller int
+	cost       int
+	atk        int
+	def        int
+	name       string
+	location   int
+}
+
+// Game variable to track game state
+type Game struct {
+	p1   Player
+	p1id int
+	p2   Player
+	p2id int
+}
+
+var currentGame Game
+
 // The Version of the program so we can figure out if we're using the most recent version
 var programVersion = "0.9"
 
@@ -558,7 +591,7 @@ func logAPICall(line string) {
 		fmt.Printf("Could not append to file %v for writing: %v\n", logAPIFile, err)
 		return
 	}
-	fmt.Printf("Writing API call to file '%v'.\n", logAPIFile)
+	// fmt.Printf("Writing API call to file '%v'.\n", logAPIFile)
 	// Defer our close
 	defer f.Close()
 
@@ -696,12 +729,21 @@ func gameEndedEvent(f map[string]interface{}) {
 	loser := losers[0].(string)      // Gotta convert this to a string
 	loser = strings.TrimSpace(loser) // Then I can use TrimSpace() on it.
 	fmt.Printf("%v triumphed over %v in an elapsed time of %vm %vs\n", winner, loser, int(elapsed.Minutes()), int(elapsed.Seconds())%60)
+	resetGame()
 }
 
 // Message: {"Players":[],"User":"InGameName","Message":"GameStarted"}
 func gameStartedEvent() {
 	GameStartTime = time.Now()
 	fmt.Printf("Game started at %v\n", GameStartTime.Format(time.UnixDate))
+	resetGame()
+}
+
+// Set up game in progress
+func resetGame() {
+	player1 := Player{name: "p1", id: 1}
+	player2 := Player{name: "p2", id: 2}
+	currentGame = Game{p1: player1, p1id: 1, p2: player2, p2id: 2}
 }
 
 // {"User":"","Message":"Login"} - Logging in from new start of Hex
@@ -722,7 +764,108 @@ func logoutEvent(s string) {
 	}
 }
 
-func playerUpdatedEvent() {
+// Do something meaningful with the playerUpdated Event
+func playerUpdatedEvent(f map[string]interface{}) {
+	var p Player
+	var pptr *Player
+	var msg string
+	// If this is the first time through, do a resetGame
+	if currentGame.p1.id == 0 {
+		resetGame()
+	}
+	// See if this player is config'd and figure out if it's p1 or p2
+	pptr = checkPlayerConfigured(f["Id"])
+	// Go ahead and make the updates
+	// p, c = updatePlayer(pptr, res, thresholds)
+	p, msg = updatePlayer(pptr, f)
+	if msg != "" {
+		fmt.Printf("%v", msg)
+		if Config["debug_player_update"] == "true" {
+			fmt.Printf("PlayerUpdate for %v\n", p)
+		}
+	}
+}
+
+// See if this player ID has been allocated for current game yet. If not, add it to the next
+// empty slot in the current game
+func checkPlayerConfigured(fID interface{}) *Player {
+	id := floatToInt(fID)
+	// If this is 1, the first player hasn't been initialized yet.
+	if currentGame.p1id == id {
+		return &currentGame.p1
+	} else if currentGame.p2id == id {
+		return &currentGame.p2
+	} else if currentGame.p1id == 1 {
+		fmt.Printf("Overwriting p1 id with %v (prev id was %v)\n", id, currentGame.p1id)
+		currentGame.p1id = id
+		currentGame.p1.id = id
+		return &currentGame.p1
+	} else
+	// same for this for player 2
+	if currentGame.p2id == 2 {
+		fmt.Printf("Overwriting p2 id with %v\n (prev id was %v)", id, currentGame.p2id)
+		currentGame.p2id = id
+		currentGame.p2.id = id
+		return &currentGame.p2
+	} else {
+		// Print an error, then return p1 from the current game
+		fmt.Printf("Got somewhere I should not have in checkPlayerConfigured. p1id: %v, p2id: %v, id: %v\nResetting game and trying again.", currentGame.p1id, currentGame.p2id, id)
+		resetGame()
+		currentGame.p1id = id
+		currentGame.p1.id = id
+		return &currentGame.p1
+	}
+}
+
+func valuesDiffer(a int, b int) bool {
+	if a != b {
+		fmt.Printf("Values differ: %d vs %d\n", a, b)
+		return true
+	}
+	return false
+}
+
+func updatePlayer(p *Player, f map[string]interface{}) (Player, string) {
+	// The thing we pass back to say whether or not this changed.
+	msg := ""
+	// Get thresholds hash
+	t := f["Thresholds"].(map[string]interface{})
+	// Turn resources into an int
+	r := floatToInt(f["Resources"])
+	// If the player's name has been set, use that for printing things out
+	name := ""
+	if p.name != "" {
+		name = p.name
+	} else {
+		name = strconv.Itoa(p.id)
+	}
+
+	msg = compareIntsAndMaybeChange(&p.resources, r, "Number of resources", msg)
+	msg = compareIntsAndMaybeChange(&p.blood, floatToInt(t["Blood"]), "Blood threshold", msg)
+	msg = compareIntsAndMaybeChange(&p.diamond, floatToInt(t["Diamond"]), "Diamond threshold", msg)
+	msg = compareIntsAndMaybeChange(&p.ruby, floatToInt(t["Ruby"]), "Ruby threshold", msg)
+	msg = compareIntsAndMaybeChange(&p.sapphire, floatToInt(t["Sapphire"]), "Sapphire threshold", msg)
+	msg = compareIntsAndMaybeChange(&p.wild, floatToInt(t["Wild"]), "Wild threshold", msg)
+
+	if msg != "" {
+		msg = fmt.Sprintf("The following changed for %v\n%v", name, msg)
+	}
+
+	return *p, msg
+}
+
+func compareIntsAndMaybeChange(a *int, b int, name string, m string) string {
+	if *a != b {
+		m = fmt.Sprintf("%v\t%v => %v : %v changed\n", m, *a, b, name)
+		*a = b
+	}
+	return m
+}
+
+func floatToInt(f interface{}) int {
+	stringI := fmt.Sprintf("%v", f)
+	i, _ := strconv.Atoi(stringI)
+	return i
 }
 
 func saveDeckEvent(f map[string]interface{}) {
@@ -822,7 +965,7 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 		}
 	case "PlayerUpdated":
 		//		fmt.Printf("Got a Player Updated message\n")
-		playerUpdatedEvent()
+		playerUpdatedEvent(f)
 	default:
 		fmt.Printf("Don't know how to handle message '%v'\n", msg)
 	}
