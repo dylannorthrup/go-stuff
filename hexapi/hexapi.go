@@ -507,12 +507,12 @@ func rawChangeCardCount(uuid string, i int) {
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.qty += i
-		if loadingCacheOrPriceData == false || Config["debug_collection_update"] == "true" {
+		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
 			fmt.Printf("INFO: New collection qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
 		}
 		cardCollection[uuid] = c
 	} else {
-		if loadingCacheOrPriceData == false || Config["debug_collection_update"] == "true" {
+		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
 			fmt.Printf("INFO: No card with UUID of %v exists. Cannot change its quantity\n.", uuid)
 		}
 	}
