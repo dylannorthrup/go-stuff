@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"regexp"
@@ -69,6 +70,8 @@ type Player struct {
 	wild      int
 	diamond   int
 	ruby      int
+	champion  gameCard
+	cards     map[string]gameCard
 }
 
 // Card in game that we're tracking
@@ -78,15 +81,15 @@ type gameCard struct {
 	atk        int
 	def        int
 	name       string
+	state      int
 	location   int
 }
 
 // Game variable to track game state
 type Game struct {
-	p1   Player
-	p1id int
-	p2   Player
-	p2id int
+	pnums map[string]int
+	p1    Player
+	p2    Player
 }
 
 var currentGame Game
@@ -140,18 +143,18 @@ var collectionTimerPeriod = time.Second * time.Duration(20)
 var collectionCacheTimer *time.Timer
 
 // List of locations cards can be for CardUpdated events
-var cardCollectionMap = map[string]string{
-	"0":   "Champion",
-	"1":   "Deck",
-	"2":   "Hand",
-	"4":   "Opposing Champion",
-	"8":   "Play",
-	"16":  "Discard",
-	"32":  "Void",
-	"64":  "Shard",
-	"128": "Chain",
-	"256": "Tunnelled",
-	"512": "Choose Effect",
+var cardCollectionMap = map[int]string{
+	0:   "Champion",
+	1:   "Deck",
+	2:   "Hand",
+	4:   "Opposing Champion",
+	8:   "Play",
+	16:  "Discard",
+	32:  "Void",
+	64:  "Shard",
+	128: "Chain",
+	256: "Tunnelled",
+	512: "Choose Effect",
 }
 
 // FUNCTIONS
@@ -171,25 +174,89 @@ func printCollection() {
 }
 
 // Guesses about CardUpdated flags importance
-// Collection is a power of 2 map. They refer to different "zones". Here's what I think they
-// correspond to:
-//	0 - Champion
+// Collection is a power of 2 map. They refer to different "zones". Here's what they correspond to:
+//	0 - None
 //	1 - Deck
 //	2 - Hand
-//	4 - Opposing Champion
+//	4 - Champions
 //	8 - In Play (battle zone)
 //	16 - Discard Pile
 //	32 - Void
-//	64 - Shard Zone (where shards go when they're played)
+//	64 - Played Resources
 //	128 - The Chain
-//	256 - Tunnelled
-//  512 - Effect Choose???
+//	256 - Underground
+//  512 - Effect Choose
+//	1024 - Mod
 //
-// State
-//	8192 - Ready
-//	16384 - Ready on opponent's turn?
-//	16517 - Exhausted
-//	16513 - Exhausted on opponent's turn?
+// Card Attributes
+//	1 - 0 - Lifedrain
+//	2 - 1 - Flight
+//	4 - 2 - Speed
+//	8 - 3 - Skyguard
+//	16 - 4 - Crush
+//	32 - 5 - Steadfast
+//	64 - 6 - Invincible
+//	128 - 7 - Spellshield
+//	256 - 8 - Unique
+//	512 - 9 - Can't Attack
+//	1024 - 10 - Can't Block
+//	2048 - 11 - Defensive
+//	4096 - 12 - Must Attack
+//	8192 - 13 - Does not auto-ready
+//	16384 - 14 -  Swiftstrike
+//	32768 - 15 - Rage
+//	65536 - 16 - Must Block
+//	131072 - 17 - Unblockable
+// 	- 18 - Prevent Combat Damage
+//	- 19 - Prevent Non-Combat Damage (also, 2^18 + 2^19 = prevent all damage)
+// 	- 20 - Unimplemented (Doublestrike)
+//	- 21 - Cannot Inflict Combat Damage
+//	- 22 - Cannot Inflict Non-Combat Damage (also, 2^21 + 2^22 = Cannot inflict damage)
+//	- 23 - Enters Play Exhausted
+//	- 24 - Inspire
+//	- 25 - Escalation
+//	- 26 - Does not ready next ready step
+//	- 27 - Lethal, but voids damaged troops
+//	- 28 - Quick
+//	- 29 - Blessing of the Fallen (can Inspire from Crypt)
+//	- 30 - Must be blocked
+//
+
+// Card States
+//	1 - 0 - None
+//	2 - 1 - Exhausted
+//	4 - 2 - Blocking
+//	8	- 3 - Attacking
+//	16 - 4 - Damaged
+//	32 - 5 - Healed
+//	64 - 6 - Dead
+//	128	- 7 - Has Attacked
+//	256	- 8 - Has Blocked
+//	512 - 9 - Effect Expired
+//	1024 - 10 - Zone Change Replacement
+//	2048 - 11 - Activated
+//	4096 - 12 - Voids if Destroyed
+//	8192 - 13 - Came out this turn
+//	16384 - 14 - Started a turn on your side
+//
+var cardStates = []string{
+	"None",
+	"exhausted",
+	"blocking",
+	"attacking",
+	"damaged",
+	"healed",
+	"dead",
+	"has attacked",
+	"has blocked",
+	"effect expired",
+	"zone change replacement",
+	"activated",
+	"voids if destroyed",
+	"came out this turn",
+	"started the turn on your side",
+}
+
 func cardUpdatedEvent(f map[string]interface{}) {
 	/* DEBUGGING TO LEARN WHAT'S UP WITH THE FLAGS
 	keys := []string{}
@@ -213,18 +280,187 @@ func cardUpdatedEvent(f map[string]interface{}) {
 	if name == "" {
 		return
 	}
-	stats := fmt.Sprintf("[(%v/%v) for %v]", f["Attack"], f["Defense"], f["Cost"])
-	collection := fmt.Sprintf("%v", f["Collection"])
-	if collection == "8" || collection == "16" || collection == "256" {
+	atk := floatToInt(f["Attack"].(float64))
+	def := floatToInt(f["Defense"].(float64))
+	cost := floatToInt(f["Cost"].(float64))
+	state := floatToInt(f["State"].(float64))
+	shards := f["Shards"]
+	attrs := f["Attributes"]
+	stats := fmt.Sprintf("[(%v/%v) for %v]", atk, def, cost)
+	collection, _ := strconv.Atoi(fmt.Sprintf("%v", f["Collection"]))
+	controller := floatToInt(f["Controller"].(float64))
+	var player *Player
+
+	// Figure out which player controls this card
+	if currentGame.p1.id == controller {
+		// fmt.Printf("controller: %v and id: %v\n", controller, currentGame.p1.id)
+		player = &currentGame.p1
+	} else if currentGame.p2.id == controller {
+		player = &currentGame.p2
+	} else if currentGame.p2.id == 2 {
+		// See if this player is config'd and figure out if it's p1 or p2 and set it appropriately if need be
+		_ = checkPlayerConfigured(controller)
+	} else {
+		fmt.Printf("Could not find player with controller number of %v\n", controller)
+		showGameState()
 		return
 	}
-	fmt.Printf("In %v Zone:\t'%v' %v\n", cardCollectionMap[collection], name, stats)
+
+	// fmt.Printf("Current Player Champion name: %v\n", player.champion.name)
+	// Do a thing here to match this message with a card we know is in the game already.  Based on that, we can
+	// either create a new card or update the old card
+
+	switch collection {
+	case 1: // Deck Zone
+		{
+			fmt.Printf("DECK: %v's %v was sent back into their deck\n", player.name, name)
+			return
+		}
+	case 2: // Hand Zone
+		{
+			fmt.Printf("HAND: %v's %v went into their hand\n", player.name, name)
+			return
+		}
+	case 4: // Champion Zone
+		{
+			if Config["debug_cardUpdated"] == "true" {
+				fmt.Printf("CCC= Working on %v with def %v, state %v and collection %v for player %v\n", name, def, translateCardState(state), collection, player)
+			}
+			if player == nil {
+				// TODO: Deal with the nil player gracefully. Until then, just let this get populated by a later message
+				// player.champion = gameCard{def: def, name: name, state: state, location: 8}
+				// // name, atk, def, state, attrs
+				// fmt.Printf("Champion %v starting off with %v health and state of %v\n", name, def, translateCardState(state))
+				return
+			}
+			if player.champion.name == "Unknown" {
+				player.champion.name = name
+				return
+			}
+			champ := player.champion
+			// if champ.def != def || champ.state != state {
+			if champ.def != def {
+				modification := "lost"
+				if champ.def < def {
+					modification = "gained"
+				}
+				difference := champ.def - def
+				if difference < 0 {
+					difference = difference * -1
+				}
+				fmt.Printf("CHAMP: %v %v %v health and now has %v health\n", name, modification, difference, def)
+				// fmt.Printf("health %v and state %v\n", def, translateCardState(state))
+				// fmt.Printf("Champion %v now has health %v and state %v\n", name, def, state)
+				player.champion.def = def
+				// TODO: Once we have a better idea about the states, pull this out into it's own block
+				player.champion.state = state
+			} else {
+				// fmt.Printf("\tCHAMP: No change for %v\n", name)
+			}
+		}
+		return
+	case 8:
+		{
+			// fmt.Printf("CardUpdatedEvent: '%v' state: %v, shards: %v, attrs: %v, collection: %v\n", name, state, shards, attrs, collection)
+			fmt.Printf("\tBATTLE: %v's %v [%v/%v] state: %v; shards: %v; attrs: %v\n", player.name, name, atk, def, translateCardState(state), shards, attrs)
+			return
+		}
+	case 16:
+		{
+			fmt.Printf("\tDISCARD: %v's %v was sent to their discard pile\n", player.name, name)
+			return
+		}
+	case 32:
+		{
+			fmt.Printf("\tVOID: %v's %v was sent to the void\n", player.name, name)
+			return
+		}
+	case 64:
+		{
+			fmt.Printf("\tSHARD: %v played %v as a resource\n", player.name, name)
+			return
+		}
+	case 128:
+		{
+			fmt.Printf("\tCHAIN: %v played %v\n", player.name, name)
+			return
+		}
+	case 256:
+		{
+			fmt.Printf("\tUNDERGROUND: %v tunnelled %v\n", player.name, name)
+			return
+		}
+	default:
+		{
+			fmt.Printf("In %v Zone:\t'%v' %v\n", cardCollectionMap[collection], name, stats)
+			return
+		}
+	}
+	// if collection == "8" || collection == "16" || collection == "256" {
+	// 	return
+	// }
+
 	// shards, _ := f["Shards"].(int)
 	// attrs, _ := f["Attributes"].(int)
 	// collection, _ := f["Collection"].(int)
 	// state, _ := f["State"].(int)
 	// fmt.Printf("CardUpdatedEvent: '%v' state: %v, shards: %v, attrs: %v, collection: %v\n", name, state, shards, attrs, collection)
 	// fmt.Printf(" - %v\n", f)
+}
+
+func translateCardState(state int) string {
+	// Init this to an empty string
+	returnString := ""
+	// Shortcut for state of 0
+	if state == 0 {
+		return "None"
+	}
+	// Set this to the top value we'd want to be looking at which is 2^(length of CardStates)
+	checkingStateValue := len(cardStates)
+
+	// Count down the possible states and, if it's there, add it to the return string
+	for true {
+		if state >= checkingStateValue {
+			// Figure out the index of the cardStates array we need to refer to
+			index := intLog2(checkingStateValue)
+			// If the index is 0, go ahead and return the returnString
+			if index <= 0 {
+				return returnString
+			}
+			// Otherwise, go ahead and process things
+			if Config["debug_card_states"] == "true" {
+				fmt.Printf("**** Index: %v from checkingStateValue %v\n", index, checkingStateValue)
+			}
+			// Some checking here so we can have nice formatting
+			if returnString == "" {
+				returnString = cardStates[index]
+			} else {
+				returnString = fmt.Sprintf("%v, %v", returnString, cardStates[index])
+			}
+			// And, remove the current checkingStateValue from the state so we count down
+			state -= checkingStateValue
+		}
+		checkingStateValue = checkingStateValue / 2
+	}
+	return returnString
+}
+
+// Do an integer version of math.Log2.  Make sure it *IS* a power of two, then
+func intLog2(num int) int {
+	floatNum := float64(num)
+	power := math.Log2(floatNum)
+	if math.Mod(power, 1.0) != 0.0 {
+		power, _ = math.Modf(power)
+	}
+	intPower := int(power)
+	return intPower
+}
+
+// Dump out current game state. For debugging. Shouldn't see this in normal operations
+func showGameState() {
+	fmt.Printf("!!!showGameState: pnums: %v\n", currentGame.pnums)
+	fmt.Printf("!!!showGameState: p1: %v\n", currentGame.p1)
+	fmt.Printf("!!!showGameState: p2: %v\n", currentGame.p2)
 }
 
 // Modify card quantities
@@ -741,9 +977,10 @@ func gameStartedEvent() {
 
 // Set up game in progress
 func resetGame() {
-	player1 := Player{name: "p1", id: 1}
-	player2 := Player{name: "p2", id: 2}
-	currentGame = Game{p1: player1, p1id: 1, p2: player2, p2id: 2}
+	pnums := map[string]int{"p1": 1, "p2": 2}
+	player1 := Player{name: "p1", id: 1, champion: gameCard{name: "Unknown"}}
+	player2 := Player{name: "p2", id: 2, champion: gameCard{name: "Unknown"}}
+	currentGame = Game{p1: player1, p2: player2, pnums: pnums}
 }
 
 // {"User":"","Message":"Login"} - Logging in from new start of Hex
@@ -791,27 +1028,33 @@ func playerUpdatedEvent(f map[string]interface{}) {
 func checkPlayerConfigured(fID interface{}) *Player {
 	id := floatToInt(fID)
 	// If this is 1, the first player hasn't been initialized yet.
-	if currentGame.p1id == id {
+	if currentGame.pnums["p1"] == id {
 		return &currentGame.p1
-	} else if currentGame.p2id == id {
+	} else if currentGame.pnums["p2"] == id {
 		return &currentGame.p2
-	} else if currentGame.p1id == 1 {
-		fmt.Printf("Overwriting p1 id with %v (prev id was %v)\n", id, currentGame.p1id)
-		currentGame.p1id = id
+	} else if currentGame.pnums["p1"] == 1 {
+		if Config["debug_player_configured"] == "true" {
+			fmt.Printf("Overwriting p1 id with %v (prev id was %v)\n", id, currentGame.pnums["p1"])
+		}
+		currentGame.pnums["p1"] = id
 		currentGame.p1.id = id
 		return &currentGame.p1
 	} else
 	// same for this for player 2
-	if currentGame.p2id == 2 {
-		fmt.Printf("Overwriting p2 id with %v\n (prev id was %v)", id, currentGame.p2id)
-		currentGame.p2id = id
+	if currentGame.pnums["p2"] == 2 {
+		if Config["debug_player_configured"] == "true" {
+			fmt.Printf("Overwriting p2 id with %v (prev id was %v)\n", id, currentGame.pnums["p2"])
+		}
+		currentGame.pnums["p2"] = id
 		currentGame.p2.id = id
 		return &currentGame.p2
 	} else {
 		// Print an error, then return p1 from the current game
-		fmt.Printf("Got somewhere I should not have in checkPlayerConfigured. p1id: %v, p2id: %v, id: %v\nResetting game and trying again.", currentGame.p1id, currentGame.p2id, id)
+		if Config["debug_player_configured"] == "true" {
+			fmt.Printf("Got somewhere I should not have in checkPlayerConfigured. pnums[p1]: %v, pnums[p2]: %v, id: %v\nResetting game and trying again.", currentGame.pnums["p1"], currentGame.pnums["p2"], id)
+		}
 		resetGame()
-		currentGame.p1id = id
+		currentGame.pnums["p1"] = id
 		currentGame.p1.id = id
 		return &currentGame.p1
 	}
@@ -904,9 +1147,12 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 		panic("AIEEE: Could not readAll for req.Body")
 	}
 	var f map[string]interface{}
+	// fmt.Printf("Contents of body:\n\t%v\n", string(body))
 	err = json.Unmarshal(body, &f)
 	if err != nil {
-		panic("AIEEE: Could not Unmarshall the body")
+		fmt.Printf("Could not unmarshall the following body:\n\t%v\n", string(body))
+		return
+		// panic("AIEEE: Could not Unmarshall the body")
 	}
 	//	fmt.Println("DEBUG: Unmarshall successful")
 	//	fmt.Println("DEBUG: Message is", f["Message"])
