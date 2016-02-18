@@ -313,12 +313,12 @@ func cardUpdatedEvent(f map[string]interface{}) {
 	switch collection {
 	case 1: // Deck Zone
 		{
-			fmt.Printf("DECK: %v's %v was sent back into their deck\n", player.name, name)
+			fmt.Printf("\tDECK: %v's %v was sent back into their deck\n", player.name, name)
 			return
 		}
 	case 2: // Hand Zone
 		{
-			fmt.Printf("HAND: %v's %v went into their hand\n", player.name, name)
+			fmt.Printf("\tHAND: %v's %v went into their hand\n", player.name, name)
 			return
 		}
 	case 4: // Champion Zone
@@ -361,13 +361,14 @@ func cardUpdatedEvent(f map[string]interface{}) {
 		return
 	case 8:
 		{
-			// fmt.Printf("CardUpdatedEvent: '%v' state: %v, shards: %v, attrs: %v, collection: %v\n", name, state, shards, attrs, collection)
-			fmt.Printf("\tBATTLE: %v's %v [%v/%v] state: %v; shards: %v; attrs: %v\n", player.name, name, atk, def, translateCardState(state), shards, attrs)
+			if Config["show_battle_details"] == "true" {
+				fmt.Printf("\tBATTLE: %v's %v [%v/%v] state: %v; shards: %v; attrs: %v\n", player.name, name, atk, def, translateCardState(state), shards, attrs)
+			}
 			return
 		}
 	case 16:
 		{
-			fmt.Printf("\tDISCARD: %v's %v was sent to their discard pile\n", player.name, name)
+			fmt.Printf("\tCRYPT: %v's %v was sent to their crypt\n", player.name, name)
 			return
 		}
 	case 32:
