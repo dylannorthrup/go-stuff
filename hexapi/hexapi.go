@@ -57,6 +57,7 @@ type Card struct {
 	rarity string
 	gold   int
 	plat   int
+	item   bool // True if it's an inventory item, false if it's a card
 }
 
 // Player variable that we'll be using in tracking game state
@@ -122,6 +123,7 @@ var packCost int
 var packGoldCost int
 var goldPlatRatio int // How many gold for a single plat
 var packNum int
+var packSize = 17
 var packContents [18]string
 var previousContents [18]string
 var draftCardsPicked = make(map[string]int)
@@ -132,8 +134,6 @@ var lastAPIMessage string
 var loadingCacheOrPriceData = false
 var currentlyDrafting = false
 
-var packSize = 17
-
 // Refresh price data every two hours
 var priceRefreshTimerPeriod = time.Hour * time.Duration(2)
 var priceRefreshCacheTimer *time.Timer
@@ -141,6 +141,13 @@ var priceRefreshCacheTimer *time.Timer
 // Cache collection data 20 seconds after the last collection message was received
 var collectionTimerPeriod = time.Second * time.Duration(20)
 var collectionCacheTimer *time.Timer
+
+// UUID to name lookup happens 1 inute after the last lookup was attempted
+var nameLookupTimerPeriod = time.Minute * time.Duration(1)
+var nameLookupCacheTimer *time.Timer
+
+// An array we use to keep track of UUIDs we need to look up names for
+var UUIDsToLookup []string
 
 // List of locations cards can be for CardUpdated events
 var cardCollectionMap = map[int]string{
@@ -498,26 +505,62 @@ func changeCardCount(uuid string, i int) {
 	// if not, go ahead and call the dangerous function
 	if Config["debug_collection_update"] == "true" {
 		c := cardCollection[uuid]
-		fmt.Printf("INFO: [changeCardCount] Changing qty for '%v' by %v (new qty %v)\n", c.name, i, c.qty)
+		fmt.Printf("INFO: [changeCardCount] Changing qty for '%v' by %v (old qty %v)\n", c.name, i, c.qty)
 	}
 	rawChangeCardCount(uuid, i)
+	if Config["debug_collection_update"] == "true" {
+		c := cardCollection[uuid]
+		fmt.Printf("INFO: [changeCardCount] New qty for '%v' is %v\n", c.name, c.qty)
+	}
 }
-
 func rawChangeCardCount(uuid string, i int) {
 	// If the card is in the system, update it
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.qty += i
 		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
-			fmt.Printf("INFO: New collection qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
+			fmt.Printf("INFO: [rawChangeCardCount] New collection qty for '%v' is %v (modified by %v)\n", c.name, c.qty, i)
 		}
 		cardCollection[uuid] = c
 	} else {
 		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
-			fmt.Printf("INFO: No card with UUID of %v exists. Cannot change its quantity\n.", uuid)
+			fmt.Printf("INFO: [rawChangeCardCount] No card with UUID of %v exists. Cannot change its quantity\n.", uuid)
 		}
 	}
-
+}
+func setEACardCount(uuid string, i int) {
+	if _, ok := cardCollection[uuid]; ok {
+		c := cardCollection[uuid]
+		c.eaqty = 0
+		changeEACardCount(uuid, i)
+	}
+}
+func changeEACardCount(uuid string, i int) {
+	// Skip the currentlyDrafting check because you won't get EA cards while drafting.
+	if Config["debug_collection_update"] == "true" {
+		c := cardCollection[uuid]
+		fmt.Printf("INFO: [changeCardCount] Changing EA qty for '%v' by %v (old qty %v)\n", c.name, i, c.eaqty)
+	}
+	rawChangeEACardCount(uuid, i)
+	if Config["debug_collection_update"] == "true" {
+		c := cardCollection[uuid]
+		fmt.Printf("INFO: [changeCardCount] New EA qty for '%v' is %v\n", c.name, c.eaqty)
+	}
+}
+func rawChangeEACardCount(uuid string, i int) {
+	// If the card is in the system, update it
+	if _, ok := cardCollection[uuid]; ok {
+		c := cardCollection[uuid]
+		c.eaqty += i
+		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
+			fmt.Printf("INFO: [rawChangeEACardCount] New collection EA qty for '%v' is %v (modified by %v)\n", c.name, c.eaqty, i)
+		}
+		cardCollection[uuid] = c
+	} else {
+		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
+			fmt.Printf("INFO: [rawChangeEACardCount] No card with UUID of %v exists. Cannot change its quantity\n.", uuid)
+		}
+	}
 }
 func incrementDraftCardsPicked(uuid string) {
 	changeDraftCardsCount(uuid, 1)
@@ -590,9 +633,9 @@ func printCardInfo(c Card) {
 
 func getCardInfo(c Card) string {
 	if Config["detailed_card_info"] == "true" {
-		return fmt.Sprintf("'[%v] %v' %v [Qty: %v] - %vp and %vg", c.rarity, c.name, c.uuid, c.qty, c.plat, c.gold)
+		return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold)
 	}
-	return fmt.Sprintf("'%v' [Qty: %v] - %vp and %vg", c.name, c.qty, c.plat, c.gold)
+	return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg", c.name, c.qty, c.eaqty, c.plat, c.gold)
 }
 
 func getCardCount(uuid string) int {
@@ -611,6 +654,79 @@ func getCardNameFromJSON(f map[string]interface{}) string {
 	// uuidMap := f["Guid"].(map[string]interface{})
 	name := f["Name"].(string)
 	return name
+}
+
+// Try to figure out the card name based on the UUID
+func getCardNameFromUUID(uuid string) string {
+	name := ""
+	// Two things to try. First, see if we have the card in our collection and, if so, use that name
+	if _, ok := cardCollection[uuid]; ok {
+		c := cardCollection[uuid]
+		name = c.name
+	}
+	// If that didn't work, make note of the UUID and set a timer so we can look it up later
+	if name == "" {
+		addRemoteNameLookup(uuid)
+		name = uuid
+	}
+	return name
+}
+
+func addRemoteNameLookup(uuid string) {
+	// fmt.Printf("Adding UUID %v to lookup array\n", uuid)
+	// Add the uuid to the UUIDs to look up
+	UUIDsToLookup = append(UUIDsToLookup, uuid)
+	// And set a timer to go off
+	if nameLookupCacheTimer != nil {
+		nameLookupCacheTimer.Stop()
+	}
+	nameLookupCacheTimer = time.AfterFunc(nameLookupTimerPeriod, doRemoteNameLookup)
+}
+
+func doRemoteNameLookup() {
+	// fmt.Printf("INFO: Beginning doRemoteNameLookup\n")
+	// If the CacheTimer's initialized, go ahead and stop it for the duration of our lookups
+	if nameLookupCacheTimer != nil {
+		nameLookupCacheTimer.Stop()
+	}
+
+	var newUUIDList []string
+	// Iterate through the list to see if we can look up the name
+	for _, uuid := range UUIDsToLookup {
+		uuidToNameURL := fmt.Sprintf("http://doc-x.net/hex/uuid_to_name.rb?%v", uuid)
+		gotHTTPError := false
+		name := ""
+		var body []byte
+		var err error
+		// fmt.Printf("Retrieving Name for UUID %v\n", uuid)
+		resp, err := http.Get(uuidToNameURL)
+		if err != nil {
+			gotHTTPError = true
+		}
+		// If we had a problem AND we're not simply doing an update, then exit.
+		// Othwerise, continue on and we'll just be using (possibly) stale data
+		if gotHTTPError {
+			// fmt.Printf("Encountered error trying to get name for UUID %v", uuid)
+			newUUIDList = append(newUUIDList, uuid)
+		} else {
+			// If we didn't encounter a problem, read in the data so we can process it
+			defer resp.Body.Close()
+			body, err = ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Fatal(err)
+			}
+			// Take the name we got and update the cardCollection with that info
+			name = strings.TrimSpace(string(body[:]))
+			c := cardCollection[uuid]
+			c.name = name
+		}
+	}
+	// Replace UUIDsToLookup with newUUIDList
+	UUIDsToLookup = newUUIDList
+	// And set up a timer to go through this whole thing again if we need to look up any more names
+	if len(UUIDsToLookup) > 0 {
+		nameLookupCacheTimer = time.AfterFunc(nameLookupTimerPeriod, doRemoteNameLookup)
+	}
 }
 
 // Handle picking of Draft Cards
@@ -779,7 +895,7 @@ func cacheCollection() {
 		if v.qty == 0 {
 			continue
 		}
-		line := fmt.Sprintf("%v : %v\n", k, v.qty)
+		line := fmt.Sprintf("%v : %v : %v\n", k, v.qty, v.eaqty)
 		f.WriteString(line)
 	}
 	f.Sync()
@@ -806,10 +922,10 @@ func cacheCollection() {
 			uuid := ntum[name]
 			c := cardCollection[uuid]
 			if Config["detailed_card_info"] == "true" {
-				fmt.Printf("CSV caching '%v [%v]' with qty %v\n", c.name, c.uuid, c.qty)
+				fmt.Printf("CSV caching '%v [%v]' with qty %v and eaqty %v\n", c.name, c.uuid, c.qty, c.eaqty)
 			}
 			if c.qty > 0 {
-				line := fmt.Sprintf("\"%v\",%v\n", c.name, c.qty)
+				line := fmt.Sprintf("\"%v\",%v,%v\n", c.name, c.qty, c.eaqty)
 				f.WriteString(line)
 			}
 		}
@@ -866,51 +982,101 @@ func readCollectionCache() {
 	// Set this so we don't spam out card count info messages
 	loadingCacheOrPriceData = true
 
-	re1, _ := regexp.Compile(`^(.*) : (\d+)$`)
+	re1, _ := regexp.Compile(`^(.*) : (\d+) : (\d+)$`)
+	// re2, _ := regexp.Compile(`^(.*) : (\d+)$`)
 	for scanner.Scan() {
 		// Split on regex and stuff count information into cardCollection
 		text := scanner.Text()
 		result := re1.FindStringSubmatch(text)
+		// If we did not get a proper match, go to next line (hopefully it's not bad)
+		// And if it is, we just skip the whole cache file and reload next time we
+		// get a Collection message
+		if len(result) == 0 {
+			continue
+		}
 		uuid := result[1]
 		i, _ := strconv.Atoi(result[2])
+		j, _ := strconv.Atoi(result[3])
 		setCardCount(uuid, i)
+		setEACardCount(uuid, j)
 		// fmt.Println(scanner.Text())
 	}
 	// And, now that we're done, reset this
 	loadingCacheOrPriceData = false
 }
 
-// Process Collection Event
-func collectionEvent(f map[string]interface{}) {
+// Process Collection or Inventory Event
+func collectionOrInventoryEvent(f map[string]interface{}) {
+	message := f["Message"]
 	action := f["Action"]
-	added, _ := f["CardsAdded"].([]interface{})
-	removed, _ := f["CardsRemoved"].([]interface{})
+	var added []interface{}
+	var removed []interface{}
+	zeroItems := true
+	if message == "Collection" {
+		zeroItems = false
+	}
+	if Config["debug_collection_update"] == "true" {
+		fmt.Printf("Message: %v\tAction: %v\tzeroItems: %v\n", message, action, zeroItems)
+	}
 	if action == "Overwrite" {
-		fmt.Printf("Got an Overwrite Collection message. Doing full update of card collection.\n")
+		if Config["debug_collection_update"] == "true" {
+			fmt.Printf("Got an Overwrite Collection message. Doing full update of card collection for %v.\n", message)
+		}
 		// If this is an Overwrite message, first thing we do is reset counts on all cards
 		for k, v := range cardCollection {
-			v.qty = 0
-			cardCollection[k] = v
+			//      zeroItem  notZeroItem
+			// item     Y         N
+			// card     N         Y
+			if (v.item == true && zeroItems) || (v.item == false && !zeroItems) {
+				// fmt.Printf("Doing Zero for %v (%v) with ZeroItems set to %v\n", c.name, c.item, zeroItems)
+				v.qty = 0
+				v.eaqty = 0
+				cardCollection[k] = v
+			}
 		}
 		// Also, turn off update printing to reduce spamming of the screen.
 		loadingCacheOrPriceData = true
+		// Finally, set up 'added' to be what's in the 'Complete' JSON array
+		added, _ = f["Complete"].([]interface{})
 	} else if action == "Update" {
-		// fmt.Print("Handling Update Collection message\n")
+		// Check message to see if we're dealing with Cards (aka "Collection") or Items (aka "Inventory")
+		if message == "Collection" {
+			// Added is what's in the 'CardsAdded' JSON array
+			added, _ = f["CardsAdded"].([]interface{})
+			removed, _ = f["CardsRemoved"].([]interface{})
+		} else if message == "Inventory" {
+			added, _ = f["ItemsAdded"].([]interface{})
+			removed, _ = f["ItemsRemoved"].([]interface{})
+		}
 	}
 	// Ok, let's extract the cards and update the numbers of each card.
 	for _, u := range added {
 		card := u.(map[string]interface{})
 		uuid := getCardUUIDFromJSON(card)
+		flags := card["Flags"]
+		name := getCardNameFromUUID(uuid)
+
+		count := floatToInt(card["Count"].(float64))
+		// Skip bogus UUIDs
 		if uuid == "00000000-0000-0000-0000-000000000000" {
 			continue
 		}
-		name := ""
+
 		if _, ok := cardCollection[uuid]; ok {
 			// Card exists. Do a straight update
-			incrementCardCount(uuid)
+			changeCardCount(uuid, count)
+			if flags == "ExtendedArt" {
+				if Config["debug_ea_counts"] == "true" {
+					c := cardCollection[uuid]
+					fmt.Printf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)\n", count, c.name, c.qty)
+				}
+				changeEACardCount(uuid, count)
+				if Config["debug_ea_counts"] == "true" {
+					c := cardCollection[uuid]
+					fmt.Printf("[collectionOrInventoryEvent] EA count after update for %v is %v (after updating with count of %v)\n", c.name, c.qty, count)
+				}
+			}
 		} else {
-			// If it doesn't exist, create a new card with appropriate values and add it to the map
-			name = getCardNameFromJSON(card)
 			// Make up a bogus rarity
 			rarity := "?"
 			// See if we've already got another version of this card in our list
@@ -920,7 +1086,6 @@ func collectionEvent(f map[string]interface{}) {
 				if strings.Contains(name[len(name)-3:], " AA") {
 					name = name[len(name)-3:]
 				} else {
-
 					newName := name + " AA"
 					rarity = "E"
 					fmt.Printf("While adding missing card, changing name of '%v' to '%v' because its rarity is '%v'\n", name, newName, rarity)
@@ -929,13 +1094,25 @@ func collectionEvent(f map[string]interface{}) {
 			}
 			// If we don't have pricing, set plat and gold to 1. Also, set qty to 1 so we don't have
 			// to do an 'incrementCardCount(uuid) afterward.
-			c := Card{name: name, uuid: uuid, plat: 1, gold: 1, rarity: rarity, qty: 1}
+			c := Card{name: name, uuid: uuid, plat: 1, gold: 1, rarity: rarity, qty: count, item: zeroItems}
 			cardCollection[uuid] = c
+			if flags == "ExtendedArt" {
+				if Config["debug_ea_counts"] == "true" {
+					c := cardCollection[uuid]
+					fmt.Printf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)\n", count, c.name, c.qty)
+				}
+				changeEACardCount(uuid, count)
+				if Config["debug_ea_counts"] == "true" {
+					c := cardCollection[uuid]
+					fmt.Printf("[collectionOrInventoryEvent] EA count after update for %v is %v (after updating with count of %v)\n", c.name, c.qty, count)
+				}
+			}
 		}
 		if Config["debug_collection_update"] == "true" {
-			fmt.Printf("INFO: [collectionEvent] Adding [%s] %s for count of %d in collection\n", uuid, card, getCardCount(uuid))
+			fmt.Printf("INFO: [collectionOrInventoryEvent] Adding [%s] %s (%v) for count of %d in collection\n", uuid, name, flags, getCardCount(uuid))
 		}
 	}
+
 	for _, u := range removed {
 		card := u.(map[string]interface{})
 		uuid := getCardUUIDFromJSON(card)
@@ -954,6 +1131,7 @@ func collectionEvent(f map[string]interface{}) {
 	// fmt.Printf("Set new collectionCacheTimer '%v'\n", collectionCacheTimer)
 	// For DEBUGGING
 	// printCollection()
+	// fmt.Printf("Done with Collection event\n")
 }
 
 // Message: {"Winners":["Uzume, Grand Concubunny"],"Losers":["Warmaster Fuzzuko"],"User":"InGameName","Message":"GameEnded"}
@@ -1180,7 +1358,9 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 		cardUpdatedEvent(f)
 	case "Collection":
 		//		fmt.Printf("Got a Collection message\n")
-		collectionEvent(f)
+		collectionOrInventoryEvent(f)
+	case "Inventory":
+		collectionOrInventoryEvent(f)
 	case "DraftCardPicked":
 		//		fmt.Printf("Got a Draft Card Picked message\n")
 		draftCardPickedEvent(f)
