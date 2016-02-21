@@ -96,7 +96,7 @@ type Game struct {
 var currentGame Game
 
 // The Version of the program so we can figure out if we're using the most recent version
-var programVersion = "0.9"
+var programVersion = "0.10"
 
 // Vars so we can figure out what our update URL is
 var programName = os.Args[0]
@@ -1292,6 +1292,47 @@ func floatToInt(f interface{}) int {
 
 func saveDeckEvent(f map[string]interface{}) {
 	fmt.Println("In function of saveDeckEvent")
+
+	// Things we care about
+	// Name
+	// Champion
+	// Deck (array of cards)
+	// Sideboard (array of cards)
+	// User
+	// Message (which should be SaveDeck)
+
+	champion := f["Champion"]
+	deckName := f["Name"]
+	deckPValue := 0
+	deckGValue := 0
+	var deck []interface{}
+	var sideboard []interface{}
+	deck, _ = f["Deck"].([]interface{})
+	sideboard, _ = f["Sideboard"].([]interface{})
+	// Ok, let's extract the cards and update the numbers of each card.
+	pv, gv := getCardArrayValue(deck)
+	deckPValue += pv
+	deckGValue += gv
+	pv, gv = getCardArrayValue(sideboard)
+	deckPValue += pv
+	deckGValue += gv
+	// And print out the value of the deck
+	fmt.Printf("Saved Deck '%v' for Champion '%v' saved. The deck's value is %vp and %vg\n", deckName, champion, deckPValue, deckGValue)
+}
+
+func getCardArrayValue(thing []interface{}) (pValue, gValue int) {
+	pValue = 0
+	gValue = 0
+	for _, u := range thing {
+		card := u.(map[string]interface{})
+		uuid := getCardUUIDFromJSON(card)
+		// flags := card["Flags"]
+		c := cardCollection[uuid]
+		// name := c.name
+		pValue += c.plat
+		gValue += c.gold
+	}
+	return
 }
 
 func dumpRequest(rw http.ResponseWriter, req *http.Request) {
