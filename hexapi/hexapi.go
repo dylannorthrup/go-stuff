@@ -4,18 +4,18 @@ package main
 //  + Parse JSON into something I can do stuff with
 //  + Read in config values from a config file
 //  + Get price data from URL
-// 	+ Profit and loss for draft packs
-// 	+ Better sorting/comparisons for picking purposes when items are equal
+//  + Profit and loss for draft packs
+//  + Better sorting/comparisons for picking purposes when items are equal
 //  - Handle the following types of events
 //    + Login
 //    + Logout
 //    + DraftPack
-// 		+ Collection
-// 		- SaveDeck
+//    + Collection
+//    * SaveDeck
 //    + DraftCardPicked/DaraftCardPicked
 //    + GameStarted
 //    + GameEnded
-//    - PlayerUpdated
+//    + PlayerUpdated
 //    * CardUpdated (Some handled, but more work can eb done)
 //  + Track pack data and indicate which cards were picked when packs wheel
 //  + Track Profit/Loss for drafts
@@ -25,8 +25,9 @@ package main
 //  + Deal with missing card info in price/UUID download
 //  + Print out details of individual cards in pack contents output
 //  + Print out Gold and Plat value of collections
-//  - Do deck summaries on Save Deck event
-//	- Handle CardUpdated with ExtendedDart attributes
+//  * Do deck summaries on Save Deck event
+//	+ Handle CardUpdated with ExtendedDart attributes
+//	- Add query param when checking for version number for version tracking
 //
 //  Stretch Goals
 //  - Post card data to remote URL (for collating draw data)
@@ -625,7 +626,7 @@ func checkProgramVersion() {
 	}
 }
 
-// Show us relevant info about the cards
+// Print out relevant info about the cards
 func printCardInfo(c Card) {
 	s := getCardInfo(c)
 	fmt.Printf("%v\n", s)
@@ -1290,6 +1291,10 @@ func floatToInt(f interface{}) int {
 	return i
 }
 
+func saveTalentsEvent(f map[string]interface{}) {
+	fmt.Println("In function of saveTalentsEvent")
+}
+
 func saveDeckEvent(f map[string]interface{}) {
 	fmt.Println("In function of saveDeckEvent")
 
@@ -1386,7 +1391,7 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	// Check to see if the last API message is the same as this one (as long as we're not in a Collection Update)
 	if lastAPIMessage == string(body) && skipDupes {
 		// fmt.Println("INFO: Duplicate API Message. Discarding.")
-		return
+		// return
 	}
 	lastAPIMessage = string(body)
 	// If we want to log API calls, make use of the lastAPIMessage we just set and log it here
@@ -1402,6 +1407,8 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 		collectionOrInventoryEvent(f)
 	case "Inventory":
 		collectionOrInventoryEvent(f)
+	case "SaveTalents":
+		saveTalentsEvent(f)
 	case "DraftCardPicked":
 		//		fmt.Printf("Got a Draft Card Picked message\n")
 		draftCardPickedEvent(f)
