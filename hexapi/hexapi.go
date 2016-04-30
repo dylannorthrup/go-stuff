@@ -1286,8 +1286,10 @@ func compareIntsAndMaybeChange(a *int, b int, name string, m string) string {
 }
 
 func floatToInt(f interface{}) int {
-	stringI := fmt.Sprintf("%v", f)
+	stringI := fmt.Sprintf("%.0f", f)
+	fmt.Printf("floatToInt: float string is %v\n", stringI)
 	i, _ := strconv.Atoi(stringI)
+	fmt.Printf("floatToInt: int string is %v\n", i)
 	return i
 }
 
@@ -1323,6 +1325,48 @@ func saveDeckEvent(f map[string]interface{}) {
 	deckGValue += gv
 	// And print out the value of the deck
 	fmt.Printf("Saved Deck '%v' for Champion '%v' saved. The deck's value is %vp and %vg\n", deckName, champion, deckPValue, deckGValue)
+}
+
+func tournamentEvent(f map[string]interface{}) {
+	fmt.Println("In function of tournamentEvent")
+
+	// Things we care about
+	// ID
+	// Style
+	// Format
+	// Games (array of Games)
+	// Players (array of Player records)
+	// User (so we can target messages)
+	tD := f["TournamentData"].(map[string]interface{})
+	tID := floatToInt(tD["ID"])
+	tStyle := tD["Style"]
+	tFormat := tD["Format"]
+	var games []interface{}
+	var players []interface{}
+	games = tD["Games"].([]interface{})
+	players = tD["Players"].([]interface{})
+	User := f["User"]
+
+	// champion := f["Champion"]
+	// deckName := f["Name"]
+	// deckPValue := 0
+	// deckGValue := 0
+	// var deck []interface{}
+	// var sideboard []interface{}
+	// deck, _ = f["Deck"].([]interface{})
+	// sideboard, _ = f["Sideboard"].([]interface{})
+	// // Ok, let's extract the cards and update the numbers of each card.
+	// pv, gv := getCardArrayValue(deck)
+	// deckPValue += pv
+	// deckGValue += gv
+	// pv, gv = getCardArrayValue(sideboard)
+	// deckPValue += pv
+	// deckGValue += gv
+	// // And print out the value of the deck
+	// fmt.Printf("Saved Deck '%v' for Champion '%v' saved. The deck's value is %vp and %vg\n", deckName, champion, deckPValue, deckGValue)
+	fmt.Printf("= TOURNAMENT update for id %d (style %v and format %v for user %v)\n", tID, tStyle, tFormat, User)
+	fmt.Printf("\t= Games: %v\n", games)
+	fmt.Printf("\t= Players: %v\n", players)
 }
 
 func getCardArrayValue(thing []interface{}) (pValue, gValue int) {
@@ -1424,6 +1468,8 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	case "SaveDeck":
 		//		fmt.Printf("Got a Save Deckmessage\n")
 		saveDeckEvent(f)
+	case "Tournament":
+		tournamentEvent(f)
 	case "Login":
 		//		fmt.Printf("Got a Login message\n")
 		if user, ok := f["User"].(string); ok {
