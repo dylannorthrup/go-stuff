@@ -26,8 +26,10 @@ package main
 //  + Print out details of individual cards in pack contents output
 //  + Print out Gold and Plat value of collections
 //  * Do deck summaries on Save Deck event
-//	+ Handle CardUpdated with ExtendedDart attributes
-//	- Add query param when checking for version number for version tracking
+//  + Handle CardUpdated with ExtendedDart attributes
+//  - Remove card you drafted from the list of 'MISSING CARDS' (or mark it in some way)
+//  - Make Tournament update messages while in tournament less chatty and more informative
+//  - Add query param when checking for version number for version tracking
 //
 //  Stretch Goals
 //  - Post card data to remote URL (for collating draw data)
@@ -190,69 +192,69 @@ func printCollection() {
 
 // Guesses about CardUpdated flags importance
 // Collection is a power of 2 map. They refer to different "zones". Here's what they correspond to:
-//	0 - None
-//	1 - Deck
-//	2 - Hand
-//	4 - Champions
-//	8 - In Play (battle zone)
-//	16 - Discard Pile
-//	32 - Void
-//	64 - Played Resources
-//	128 - The Chain
-//	256 - Underground
+//  0 - None
+//  1 - Deck
+//  2 - Hand
+//  4 - Champions
+//  8 - In Play (battle zone)
+//  16 - Discard Pile
+//  32 - Void
+//  64 - Played Resources
+//  128 - The Chain
+//  256 - Underground
 //  512 - Effect Choose
-//	1024 - Mod
+//  1024 - Mod
 //
 // Card Attributes
-//	1 - 0 - Lifedrain
-//	2 - 1 - Flight
-//	4 - 2 - Speed
-//	8 - 3 - Skyguard
-//	16 - 4 - Crush
-//	32 - 5 - Steadfast
-//	64 - 6 - Invincible
-//	128 - 7 - Spellshield
-//	256 - 8 - Unique
-//	512 - 9 - Can't Attack
-//	1024 - 10 - Can't Block
-//	2048 - 11 - Defensive
-//	4096 - 12 - Must Attack
-//	8192 - 13 - Does not auto-ready
-//	16384 - 14 -  Swiftstrike
-//	32768 - 15 - Rage
-//	65536 - 16 - Must Block
-//	131072 - 17 - Unblockable
-// 	- 18 - Prevent Combat Damage
-//	- 19 - Prevent Non-Combat Damage (also, 2^18 + 2^19 = prevent all damage)
-// 	- 20 - Unimplemented (Doublestrike)
-//	- 21 - Cannot Inflict Combat Damage
-//	- 22 - Cannot Inflict Non-Combat Damage (also, 2^21 + 2^22 = Cannot inflict damage)
-//	- 23 - Enters Play Exhausted
-//	- 24 - Inspire
-//	- 25 - Escalation
-//	- 26 - Does not ready next ready step
-//	- 27 - Lethal, but voids damaged troops
-//	- 28 - Quick
-//	- 29 - Blessing of the Fallen (can Inspire from Crypt)
-//	- 30 - Must be blocked
+//  1 - 0 - Lifedrain
+//  2 - 1 - Flight
+//  4 - 2 - Speed
+//  8 - 3 - Skyguard
+//  16 - 4 - Crush
+//  32 - 5 - Steadfast
+//  64 - 6 - Invincible
+//  128 - 7 - Spellshield
+//  256 - 8 - Unique
+//  512 - 9 - Can't Attack
+//  1024 - 10 - Can't Block
+//  2048 - 11 - Defensive
+//  4096 - 12 - Must Attack
+//  8192 - 13 - Does not auto-ready
+//  16384 - 14 -  Swiftstrike
+//  32768 - 15 - Rage
+//  65536 - 16 - Must Block
+//  131072 - 17 - Unblockable
+//   - 18 - Prevent Combat Damage
+//  - 19 - Prevent Non-Combat Damage (also, 2^18 + 2^19 = prevent all damage)
+//   - 20 - Unimplemented (Doublestrike)
+//  - 21 - Cannot Inflict Combat Damage
+//  - 22 - Cannot Inflict Non-Combat Damage (also, 2^21 + 2^22 = Cannot inflict damage)
+//  - 23 - Enters Play Exhausted
+//  - 24 - Inspire
+//  - 25 - Escalation
+//  - 26 - Does not ready next ready step
+//  - 27 - Lethal, but voids damaged troops
+//  - 28 - Quick
+//  - 29 - Blessing of the Fallen (can Inspire from Crypt)
+//  - 30 - Must be blocked
 //
 
 // Card States
-//	1 - 0 - None
-//	2 - 1 - Exhausted
-//	4 - 2 - Blocking
-//	8	- 3 - Attacking
-//	16 - 4 - Damaged
-//	32 - 5 - Healed
-//	64 - 6 - Dead
-//	128	- 7 - Has Attacked
-//	256	- 8 - Has Blocked
-//	512 - 9 - Effect Expired
-//	1024 - 10 - Zone Change Replacement
-//	2048 - 11 - Activated
-//	4096 - 12 - Voids if Destroyed
-//	8192 - 13 - Came out this turn
-//	16384 - 14 - Started a turn on your side
+//  1 - 0 - None
+//  2 - 1 - Exhausted
+//  4 - 2 - Blocking
+//  8  - 3 - Attacking
+//  16 - 4 - Damaged
+//  32 - 5 - Healed
+//  64 - 6 - Dead
+//  128  - 7 - Has Attacked
+//  256  - 8 - Has Blocked
+//  512 - 9 - Effect Expired
+//  1024 - 10 - Zone Change Replacement
+//  2048 - 11 - Activated
+//  4096 - 12 - Voids if Destroyed
+//  8192 - 13 - Came out this turn
+//  16384 - 14 - Started a turn on your side
 //
 var cardStates = []string{
 	"None",
@@ -276,21 +278,21 @@ func cardUpdatedEvent(f map[string]interface{}) {
 	/* DEBUGGING TO LEARN WHAT'S UP WITH THE FLAGS
 	keys := []string{}
 	for k := range f {
-		keys = append(keys, k)
+	  keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if strings.Contains(k, "Abilities") ||
-			strings.Contains(k, "BaseTemplate") ||
-			strings.Contains(k, "Message") ||
-			strings.Contains(k, "User") {
-			// fmt.Println("\nSKIPPING Abilities section")
-			continue
-		}
-		fmt.Printf("%v: %v - ", k, f[k])
+	  if strings.Contains(k, "Abilities") ||
+	    strings.Contains(k, "BaseTemplate") ||
+	    strings.Contains(k, "Message") ||
+	    strings.Contains(k, "User") {
+	    // fmt.Println("\nSKIPPING Abilities section")
+	    continue
+	  }
+	  fmt.Printf("%v: %v - ", k, f[k])
 	}
 	fmt.Println("")
-	/*	END DEBUGGING TO LEARN WHAT'S UP WITH THE FLAGS */
+	/*  END DEBUGGING TO LEARN WHAT'S UP WITH THE FLAGS */
 	name := f["Name"].(string)
 	if name == "" {
 		return
@@ -413,7 +415,7 @@ func cardUpdatedEvent(f map[string]interface{}) {
 		}
 	}
 	// if collection == "8" || collection == "16" || collection == "256" {
-	// 	return
+	//   return
 	// }
 
 	// shards, _ := f["Shards"].(int)
@@ -760,6 +762,8 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	if packNum > 8 {
 		prevCard := fmt.Sprintf("'%v', ", c.name)
 		previousContents[packNum] = strings.Replace(previousContents[packNum], prevCard, "", 1)
+		prevCard := fmt.Sprintf("'%v', ", c.name)
+		previousContents[numCards] = strings.Replace(previousContents[numCards], prevCard, "", 1)
 	}
 	if packNum == 1 {
 		if Config["debug_pack_value"] == "true" {
@@ -800,6 +804,8 @@ func draftPackEvent(f map[string]interface{}) {
 			previousContents[n] = ""
 		}
 	}
+	// If we've gone through 7 or more packs, copy the previous pack contents to this pack's
+	// contents so we can figure out what's missing
 	if numCards < (packSize - 7) {
 		prevNum := numCards + 8
 		previousContents[numCards] = packContents[prevNum]
@@ -827,15 +833,17 @@ func draftPackEvent(f map[string]interface{}) {
 		packContents[numCards] = fmt.Sprintf("'%v', %v", c.name, packContents[numCards])
 		contentsInfo = fmt.Sprintf("'[%v %2d - %3dp/%3dg] %v'\n\t%v", c.rarity, c.qty, c.plat, c.gold, c.name, contentsInfo)
 
-		// If we have (packSize - 7) or more cards in pack, save what we've got so we've got so we can determine what others picked
+		// If we have (packSize - 7) or more cards in pack, save what we've got so we've got so we
+		// can determine what others picked
 		if numCards < (packSize - 7) {
 			prevCard := fmt.Sprintf("'%v', ", c.name)
 			previousContents[numCards] = strings.Replace(previousContents[numCards], prevCard, "", 1)
 		}
 	}
-	// Curious why I'm doing this. Pretty sure it's to remove the leading ", "from the string
+	// Removing the leading ", "from the packContents and contentsInfo strings
 	packContents[numCards] = strings.Replace(packContents[numCards], ", ", "", 1)
 	contentsInfo = strings.Replace(contentsInfo, ", ", "", 1)
+	// Print out the contents of packs and any missing cards
 	fmt.Printf("== Pack [%v] Contents:\n\t%v", numCards, contentsInfo)
 	if numCards < (packSize - 7) {
 		fmt.Printf("-- MISSING CARDS: %v\n", previousContents[numCards])
@@ -1436,8 +1444,8 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 		return
 		// panic("AIEEE: Could not Unmarshall the body")
 	}
-	//	fmt.Println("DEBUG: Unmarshall successful")
-	//	fmt.Println("DEBUG: Message is", f["Message"])
+	//  fmt.Println("DEBUG: Unmarshall successful")
+	//  fmt.Println("DEBUG: Message is", f["Message"])
 	skipDupes := true
 	msg := f["Message"]
 	if msg == "Collection" {
@@ -1457,48 +1465,48 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	}
 	switch msg {
 	case "CardUpdated":
-		//		fmt.Printf("Got a Card Updated message\n")
+		//    fmt.Printf("Got a Card Updated message\n")
 		cardUpdatedEvent(f)
 	case "Collection":
-		//		fmt.Printf("Got a Collection message\n")
+		//    fmt.Printf("Got a Collection message\n")
 		collectionOrInventoryEvent(f)
 	case "Inventory":
 		collectionOrInventoryEvent(f)
 	case "SaveTalents":
 		saveTalentsEvent(f)
 	case "DraftCardPicked":
-		//		fmt.Printf("Got a Draft Card Picked message\n")
+		//    fmt.Printf("Got a Draft Card Picked message\n")
 		draftCardPickedEvent(f)
 	case "DraftPack":
-		//		fmt.Printf("Got a Draft Pack message\n")
+		//    fmt.Printf("Got a Draft Pack message\n")
 		draftPackEvent(f)
 	case "GameEnded":
-		//		fmt.Printf("Got a Game Ended message\n")
+		//    fmt.Printf("Got a Game Ended message\n")
 		gameEndedEvent(f)
 	case "GameStarted":
-		//		fmt.Printf("Got a Game Started message\n")
+		//    fmt.Printf("Got a Game Started message\n")
 		gameStartedEvent()
 	case "SaveDeck":
-		//		fmt.Printf("Got a Save Deckmessage\n")
+		//    fmt.Printf("Got a Save Deckmessage\n")
 		saveDeckEvent(f)
 	case "Tournament":
 		tournamentEvent(f)
 	case "Login":
-		//		fmt.Printf("Got a Login message\n")
+		//    fmt.Printf("Got a Login message\n")
 		if user, ok := f["User"].(string); ok {
 			loginEvent(user)
 		} else {
 			loginEvent("")
 		}
 	case "Logout":
-		//		fmt.Printf("Got a Logout message\n")
+		//    fmt.Printf("Got a Logout message\n")
 		if user, ok := f["User"].(string); ok {
 			logoutEvent(user)
 		} else {
 			logoutEvent("")
 		}
 	case "PlayerUpdated":
-		//		fmt.Printf("Got a Player Updated message\n")
+		//    fmt.Printf("Got a Player Updated message\n")
 		playerUpdatedEvent(f)
 	default:
 		fmt.Printf("Don't know how to handle message '%v'\n", msg)
@@ -1736,7 +1744,7 @@ func main() {
 	// Read config file
 	Config = loadDefaults()
 	Config = readConfig("config.ini", Config)
-	//	fmt.Printf("Using the following configuration values\n\tPrice URL (price_url): '%v'\n\tCollection file (collection_file): '%v'\n\tAlternate Art/Promo List URL(aa_promo_url): '%v'\n", Config["price_url"], Config["collection_file"], Config["aa_promo_url"])
+	//  fmt.Printf("Using the following configuration values\n\tPrice URL (price_url): '%v'\n\tCollection file (collection_file): '%v'\n\tAlternate Art/Promo List URL(aa_promo_url): '%v'\n", Config["price_url"], Config["collection_file"], Config["aa_promo_url"])
 	// Check to see if we're running the most recent version
 	checkProgramVersion()
 	// Retrieve card price info
