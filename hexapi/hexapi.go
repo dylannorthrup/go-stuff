@@ -41,6 +41,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"reflect"
 	"regexp"
 	"runtime"
 	"sort"
@@ -131,6 +132,12 @@ var draftCardsPicked = make(map[string]int)
 var sessionPlatProfit int
 var sessionGoldProfit int
 var lastAPIMessage string
+
+// var games []interface{}
+// var players []interface{}
+
+var tournamentPlayers []interface{}
+var tournamentGames []interface{}
 
 var loadingCacheOrPriceData = false
 var currentlyDrafting = false
@@ -1287,9 +1294,9 @@ func compareIntsAndMaybeChange(a *int, b int, name string, m string) string {
 
 func floatToInt(f interface{}) int {
 	stringI := fmt.Sprintf("%.0f", f)
-	fmt.Printf("floatToInt: float string is %v\n", stringI)
+	// fmt.Printf("floatToInt: float string is %v\n", stringI)
 	i, _ := strconv.Atoi(stringI)
-	fmt.Printf("floatToInt: int string is %v\n", i)
+	// fmt.Printf("floatToInt: int string is %v\n", i)
 	return i
 }
 
@@ -1328,7 +1335,7 @@ func saveDeckEvent(f map[string]interface{}) {
 }
 
 func tournamentEvent(f map[string]interface{}) {
-	fmt.Println("In function of tournamentEvent")
+	// fmt.Println("In function of tournamentEvent")
 
 	// Things we care about
 	// ID
@@ -1347,26 +1354,32 @@ func tournamentEvent(f map[string]interface{}) {
 	players = tD["Players"].([]interface{})
 	User := f["User"]
 
-	// champion := f["Champion"]
-	// deckName := f["Name"]
-	// deckPValue := 0
-	// deckGValue := 0
-	// var deck []interface{}
-	// var sideboard []interface{}
-	// deck, _ = f["Deck"].([]interface{})
-	// sideboard, _ = f["Sideboard"].([]interface{})
-	// // Ok, let's extract the cards and update the numbers of each card.
-	// pv, gv := getCardArrayValue(deck)
-	// deckPValue += pv
-	// deckGValue += gv
-	// pv, gv = getCardArrayValue(sideboard)
-	// deckPValue += pv
-	// deckGValue += gv
-	// // And print out the value of the deck
-	// fmt.Printf("Saved Deck '%v' for Champion '%v' saved. The deck's value is %vp and %vg\n", deckName, champion, deckPValue, deckGValue)
-	fmt.Printf("= TOURNAMENT update for id %d (style %v and format %v for user %v)\n", tID, tStyle, tFormat, User)
+	if Config["tournament_debug"] == "true" {
+		fmt.Printf("= TOURNAMENT update for id %d (style %v and format %v for user %v)\n", tID, tStyle, tFormat, User)
+	}
+	// Check to see if we have any games yet. If not, we're in registration and we just want to print out the folks signed up
+	// for the tournament
+	if len(games) == 0 {
+		// If we have the same players, skip it. No need to keep printing the same info over and over
+		if reflect.DeepEqual(players, tournamentPlayers) {
+			return
+		}
+		// They're not the same, so make them the same now
+		tournamentPlayers = players
+		fmt.Printf("\t%v Players in tournament so far:\n", len(tournamentPlayers))
+		for _, p := range tournamentPlayers {
+			pHash := p.(map[string]interface{})
+			pName := pHash["Name"]
+			fmt.Printf("\t - %v\n", pName)
+		}
+		return
+	}
 	fmt.Printf("\t= Games: %v\n", games)
 	fmt.Printf("\t= Players: %v\n", players)
+}
+
+func printTournamentStatus() {
+
 }
 
 func getCardArrayValue(thing []interface{}) (pValue, gValue int) {
