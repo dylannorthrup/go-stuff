@@ -27,7 +27,7 @@ package main
 //  + Print out Gold and Plat value of collections
 //  * Do deck summaries on Save Deck event
 //  + Handle CardUpdated with ExtendedDart attributes
-//  - Remove card you drafted from the list of 'MISSING CARDS' (or mark it in some way)
+//  + Remove card you drafted from the list of 'MISSING CARDS' (or mark it in some way) bug FIXED
 //  - Make Tournament update messages while in tournament less chatty and more informative
 //  - Add query param when checking for version number for version tracking
 //
@@ -1372,6 +1372,10 @@ func tournamentEvent(f map[string]interface{}) {
 	if len(games) == 0 {
 		// If we have the same players, skip it. No need to keep printing the same info over and over
 		if reflect.DeepEqual(players, tournamentPlayers) {
+			return
+		}
+		// If tournamentPlayers is '0', ignore the result
+		if len(players) == 0 {
 			return
 		}
 		// They're not the same, so make them the same now
