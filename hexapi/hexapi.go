@@ -761,7 +761,7 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	// Put something here to remove c.name from packContents[packNum]
 	if packNum > 8 {
 		prevCard := fmt.Sprintf("'%v', ", c.name)
-		previousContents[packNum] = strings.Replace(previousContents[packNum], prevCard, "", 1)
+		packContents[packNum] = strings.Replace(packContents[packNum], prevCard, "", 1)
 	}
 	if packNum == 1 {
 		if Config["debug_pack_value"] == "true" {
