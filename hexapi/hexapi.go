@@ -762,8 +762,6 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	if packNum > 8 {
 		prevCard := fmt.Sprintf("'%v', ", c.name)
 		previousContents[packNum] = strings.Replace(previousContents[packNum], prevCard, "", 1)
-		prevCard := fmt.Sprintf("'%v', ", c.name)
-		previousContents[numCards] = strings.Replace(previousContents[numCards], prevCard, "", 1)
 	}
 	if packNum == 1 {
 		if Config["debug_pack_value"] == "true" {
@@ -841,8 +839,12 @@ func draftPackEvent(f map[string]interface{}) {
 		}
 	}
 	// Removing the leading ", "from the packContents and contentsInfo strings
-	packContents[numCards] = strings.Replace(packContents[numCards], ", ", "", 1)
-	contentsInfo = strings.Replace(contentsInfo, ", ", "", 1)
+	if packContents[numCards][len(packContents[numCards])-2:] == ", " {
+		packContents[numCards] = packContents[numCards][:len(packContents[numCards])-2]
+	}
+	if contentsInfo[len(contentsInfo)-2:] == ", " {
+		contentsInfo = contentsInfo[:len(contentsInfo)-2]
+	}
 	// Print out the contents of packs and any missing cards
 	fmt.Printf("== Pack [%v] Contents:\n\t%v", numCards, contentsInfo)
 	if numCards < (packSize - 7) {
