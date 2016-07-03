@@ -99,6 +99,24 @@ type Game struct {
 
 var currentGame Game
 
+// tGame variable to track tournament game states
+type tGame struct {
+	id     int
+	p1     string
+	p2     string
+	g1w    string
+	g2w    string
+	g3w    string
+	status int
+}
+
+type tPlayer struct {
+	name   string
+	wins   int
+	losses int
+	points int
+}
+
 // The Version of the program so we can figure out if we're using the most recent version
 var programVersion = "0.10"
 
@@ -135,11 +153,14 @@ var sessionPlatProfit int
 var sessionGoldProfit int
 var lastAPIMessage string
 
-// var games []interface{}
+// var matches []interface{}
 // var players []interface{}
 
-var tournamentPlayers []interface{}
-var tournamentGames []interface{}
+var tournamentPlayerList []interface{}
+var tournamentMatches []interface{}
+var tournamentGames = make(map[int]tGame)
+var tournamentPlayers = make(map[string]tPlayer)
+var currentTournamentID = 0
 
 var loadingCacheOrPriceData = false
 var currentlyDrafting = false
@@ -1348,53 +1369,182 @@ func tournamentEvent(f map[string]interface{}) {
 	// fmt.Println("In function of tournamentEvent")
 
 	// Things we care about
-	// ID
-	// Style
-	// Format
-	// Games (array of Games)
-	// Players (array of Player records)
-	// User (so we can target messages)
 	tD := f["TournamentData"].(map[string]interface{})
+	// ID
 	tID := floatToInt(tD["ID"])
+	// Style
 	tStyle := tD["Style"]
+	// Format
 	tFormat := tD["Format"]
-	var games []interface{}
+	var matches []interface{}
 	var players []interface{}
-	games = tD["Games"].([]interface{})
+	// Matches (array of Matches)
+	matches = tD["Games"].([]interface{})
+	// Players (array of Player records)
 	players = tD["Players"].([]interface{})
+	// User (so we can target messages)
 	User := f["User"]
 
 	if Config["tournament_debug"] == "true" {
 		fmt.Printf("= TOURNAMENT update for id %d (style %v and format %v for user %v)\n", tID, tStyle, tFormat, User)
 	}
-	// Check to see if we have any games yet. If not, we're in registration and we just want to print out the folks signed up
-	// for the tournament
-	if len(games) == 0 {
+
+	// Check to see if we have any matches yet. If not, we're in registration and we just want to
+	// print out the folks signed up for the tournament
+	if len(matches) == 0 {
 		// If we have the same players, skip it. No need to keep printing the same info over and over
-		if reflect.DeepEqual(players, tournamentPlayers) {
+		if reflect.DeepEqual(players, tournamentPlayerList) {
 			return
 		}
-		// If tournamentPlayers is '0', ignore the result
+		// If tournamentPlayerList is '0', ignore the result
 		if len(players) == 0 {
 			return
 		}
 		// They're not the same, so make them the same now
-		tournamentPlayers = players
-		fmt.Printf("\t%v Players in tournament so far:\n", len(tournamentPlayers))
-		for _, p := range tournamentPlayers {
+		tournamentPlayerList = players
+		fmt.Printf("\t%v Players currently in tournament:\n", len(tournamentPlayerList))
+		for _, p := range tournamentPlayerList {
 			pHash := p.(map[string]interface{})
 			pName := pHash["Name"]
 			fmt.Printf("\t - %v\n", pName)
 		}
 		return
 	}
-	fmt.Printf("\t= Games: %v\n", games)
-	fmt.Printf("\t= Players: %v\n", players)
+	// If we're here, we've got some actual matches going on. If the data being sent is the
+	// same is last time, we don't have any new information and just skip it.
+	playersEqual := false
+	matchesEqual := false
+	if reflect.DeepEqual(players, tournamentPlayers) {
+		playersEqual = true
+	}
+	if reflect.DeepEqual(matches, tournamentMatches) {
+		matchesEqual = true
+	}
+	if playersEqual && matchesEqual {
+		return
+	}
+	// If this is a new tournament, we want to clear out any pre-existing data and set a
+	// variable so we'll print out the new information we're creating
+	printNewItems := false
+	if currentTournamentID != tID {
+		currentTournamentID = tID
+		printNewItems = true
+		tournamentGames = make(map[int]tGame)
+		tournamentPlayers = make(map[string]tPlayer)
+	}
+	outputString := ""
+	// If we're here, we've got matches going on and new information
+	// Let's print out ones that have been updated
+	for _, g := range matches {
+		tg := g.(map[string]interface{})
+		ng := parseTournamentGame(tg)
+		nID := ng.id
+		// Make sure we've got this as an ID in the overall tournamentGames hash
+		if _, ok := tournamentGames[nID]; ok {
+			// If these are the same, move on to the next game
+			if reflect.DeepEqual(ng, tournamentGames[nID]) {
+				continue
+			}
+			// If they're not the same, print out the updated information
+			tournamentGames[nID] = ng
+			outputString = fmt.Sprintf("%v%v", outputString, printTournamentGame(nID))
+		} else {
+			tournamentGames[nID] = ng
+			if printNewItems {
+				outputString = fmt.Sprintf("%v%v", outputString, printTournamentGame(nID))
+			}
+		}
+	}
+	// And do the same thing for players
+	for _, p := range players {
+		tp := p.(map[string]interface{})
+		np := parseTournamentPlayer(tp)
+		npName := np.name
+		// Make sure we've got this as an ID in the overall tournamentGames hash
+		if _, ok := tournamentPlayers[npName]; ok {
+			// If these are the same, move on to the next game
+			if reflect.DeepEqual(np, tournamentPlayers[npName]) {
+				continue
+			}
+			// If they're not the same, print out the updated information
+			tournamentPlayers[npName] = np
+			outputString = fmt.Sprintf("%v%v", outputString, printTournamentPlayer(npName))
+		} else {
+			tournamentPlayers[npName] = np
+			if printNewItems {
+				outputString = fmt.Sprintf("%v%v", outputString, printTournamentPlayer(npName))
+			}
+		}
+	}
+	if outputString == "" {
+		return
+	}
+	fmt.Printf("= TOURNAMENT update for tournament %d (style %v and format %v)\n", tID, tStyle, tFormat)
+	fmt.Printf(outputString)
 }
 
-func printTournamentStatus() {
-
+// When handed a tPlayer object, print it out
+func sprintPlayer(p tPlayer) (ret string) {
+	ret = fmt.Sprintf("\tTournament Player %v: %v Wins, %v Losses, %v Points\n", p.name, p.wins, p.losses, p.points)
+	return ret
 }
+
+// Take game ID, verify it exists in the global tracker, then hand it off to be printed
+func printTournamentPlayer(pID string) (ret string) {
+	var p tPlayer
+	if _, ok := tournamentPlayers[pID]; ok {
+		p = tournamentPlayers[pID]
+	} else {
+		// pID does not exist in tournamentPlayers. Exit
+		return
+	}
+	ret = sprintPlayer(p)
+	return ret
+}
+
+// Build a tPlayer object out of a JSON blob handed to us
+func parseTournamentPlayer(tph map[string]interface{}) (player tPlayer) {
+	player.wins = floatToInt(tph["Wins"].(float64))
+	player.losses = floatToInt(tph["Losses"].(float64))
+	player.points = floatToInt(tph["Points"].(float64))
+	player.name = tph["Name"].(string)
+	return player
+}
+
+// When handed a tPlayer object, print it out
+func sprintGame(g tGame) (ret string) {
+	ret = fmt.Sprintf("\tTournament Game %v [%v]: %v vs %v\n", g.id, g.status, g.p1, g.p2)
+	ret = fmt.Sprintf("%v\tGame Status - Game 1 Winner: '%v'   Game 2 Winner: '%v'   Game 3 Winner: '%v'\n", ret, g.g1w, g.g2w, g.g3w)
+	return ret
+}
+
+// Take game ID, verify it exists in the global tracker, then hand it off to be printed
+func printTournamentGame(gID int) (ret string) {
+	var g tGame
+	if _, ok := tournamentGames[gID]; ok {
+		g = tournamentGames[gID]
+	} else {
+		// gID does not exist in tournamentGames. Exit
+		return
+	}
+	return sprintGame(g)
+}
+
+// Build a tGame object out of a JSON blob handed to us
+func parseTournamentGame(tgh map[string]interface{}) (game tGame) {
+	game.id = floatToInt(tgh["ID"].(float64))
+	game.p1 = tgh["PlayerOne"].(string)
+	game.p2 = tgh["PlayerTwo"].(string)
+	game.g1w = tgh["GameOneWinner"].(string)
+	game.g2w = tgh["GameTwoWinner"].(string)
+	game.g3w = tgh["GameThreeWinner"].(string)
+	game.status = floatToInt(tgh["Status"].(float64))
+	return game
+}
+
+//func printTournamentStatus() {
+//
+//}
 
 func getCardArrayValue(thing []interface{}) (pValue, gValue int) {
 	pValue = 0
