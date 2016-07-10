@@ -622,17 +622,12 @@ func changeDraftCardsCount(uuid string, i int) {
 func checkProgramVersion() {
 	fmt.Print("Checking for program updates . . . ")
 	versionURL := Config["version_url"]
-	resp, err := http.Get(versionURL)
+	body, err := grabFromURL(versionURL)
 	if err != nil {
 		fmt.Printf("Could not retrive version information from version url: '%v'. Encountered the following error: %v\n", versionURL, err)
 		return
 	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-	version := string(body)
+	version := body
 	version = strings.Replace(version, "\n", "", 1)
 	if programVersion == version {
 		fmt.Printf("Running up to date version '%v'\n", version)
@@ -727,10 +722,10 @@ func doRemoteNameLookup() {
 		uuidToNameURL := fmt.Sprintf("http://doc-x.net/hex/uuid_to_name.rb?%v", uuid)
 		gotHTTPError := false
 		name := ""
-		var body []byte
+		var body string
 		var err error
 		// fmt.Printf("Retrieving Name for UUID %v\n", uuid)
-		resp, err := http.Get(uuidToNameURL)
+		body, err = grabFromURL(uuidToNameURL)
 		if err != nil {
 			gotHTTPError = true
 		}
@@ -740,14 +735,8 @@ func doRemoteNameLookup() {
 			// fmt.Printf("Encountered error trying to get name for UUID %v", uuid)
 			newUUIDList = append(newUUIDList, uuid)
 		} else {
-			// If we didn't encounter a problem, read in the data so we can process it
-			defer resp.Body.Close()
-			body, err = ioutil.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatal(err)
-			}
 			// Take the name we got and update the cardCollection with that info
-			name = strings.TrimSpace(string(body[:]))
+			name = strings.TrimSpace(body)
 			c := cardCollection[uuid]
 			c.name = name
 		}
@@ -1711,24 +1700,28 @@ func readConfig(fname string, config map[string]string) map[string]string {
 	return config
 }
 
+// Utility function to encapsulate sending GET HTTP requests and getting back
+// the results
 func grabFromURL(url string) (body string, err error) {
+	// Set up a flag to see if we had a problem
 	gotHTTPError := false
+	// Get the content from 'url'
 	resp, err := http.Get(url)
-	//		resp, err := http.Get(Config["price_url"])
 	if err != nil {
 		gotHTTPError = true
 	}
-	// If we had a problem AND we're not simply doing an update, then exit.
-	// Othwerise, continue on and we'll just be using (possibly) stale data
+	// If we had a problem, return a blank string and the error code
+	// Othwerise, read in the contents of the URL and pass it back
 	if gotHTTPError {
 		return "", err
 	} else {
-		// If we didn't encounter a problem, read in the data so we can process it
 		defer resp.Body.Close()
 		body, ioErr := ioutil.ReadAll(resp.Body)
 		if ioErr != nil {
 			log.Fatal(ioErr)
 		}
+		// We like to deal with strings over byte arrays, so stringify before
+		// returning.
 		strBody := string(body)
 		return strBody, err
 	}
@@ -1738,7 +1731,8 @@ func grabFromURL(url string) (body string, err error) {
 func getCardPriceInfo() {
 	//  Retrieve from http://doc-x.net/hex/all_prices_json.txt
 
-	var body []byte
+	var byteBlob []byte
+	var body string
 	var err error
 	updatingData := false
 	gotHTTPError := false
@@ -1748,7 +1742,7 @@ func getCardPriceInfo() {
 	}
 	if Config["local_price_file"] == "" {
 		fmt.Printf("Retrieving prices from %v\n", Config["price_url"])
-		resp, err := http.Get(Config["price_url"])
+		body, err = grabFromURL(Config["price_url"])
 		if err != nil {
 			gotHTTPError = true
 		}
@@ -1763,17 +1757,10 @@ func getCardPriceInfo() {
 			setPriceRefreshTimer()
 			return
 		}
-		// If we didn't encounter a problem, read in the data so we can process it
-		if !gotHTTPError {
-			defer resp.Body.Close()
-			body, err = ioutil.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
+		byteBlob = []byte(body)
 	} else {
 		fmt.Printf("Retrieving prices from %v\n", Config["local_price_file"])
-		body, err = ioutil.ReadFile(Config["local_price_file"])
+		byteBlob, err = ioutil.ReadFile(Config["local_price_file"])
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -1781,15 +1768,12 @@ func getCardPriceInfo() {
 	// If we didn't have a problem retrieving the HTTP data, go ahead and process it
 	// Also, this shouldn't get set if we're reading in from a local file
 	if !gotHTTPError {
-		// s := string(body)
 		var f map[string]interface{}
-		err = json.Unmarshal(body, &f)
+		err = json.Unmarshal(byteBlob, &f)
 		if err != nil {
 			panic("Could not Unmarshal price body")
 		}
-		// fmt.Println("Unmarshalled price Body")
 		cards := f["cards"].([]interface{})
-		// fmt.Println("Assigned cards from 'f' and made cj variable")
 		// Make some variables so we re-use them instead of re-creating them each run through
 		var c = make(map[string]interface{})
 		var name string
