@@ -1711,6 +1711,29 @@ func readConfig(fname string, config map[string]string) map[string]string {
 	return config
 }
 
+func grabFromURL(url string) (body string, err error) {
+	gotHTTPError := false
+	resp, err := http.Get(url)
+	//		resp, err := http.Get(Config["price_url"])
+	if err != nil {
+		gotHTTPError = true
+	}
+	// If we had a problem AND we're not simply doing an update, then exit.
+	// Othwerise, continue on and we'll just be using (possibly) stale data
+	if gotHTTPError {
+		return "", err
+	} else {
+		// If we didn't encounter a problem, read in the data so we can process it
+		defer resp.Body.Close()
+		body, ioErr := ioutil.ReadAll(resp.Body)
+		if ioErr != nil {
+			log.Fatal(ioErr)
+		}
+		strBody := string(body)
+		return strBody, err
+	}
+}
+
 // Retrieve card prices and AA card info to prime the collection pump
 func getCardPriceInfo() {
 	//  Retrieve from http://doc-x.net/hex/all_prices_json.txt
