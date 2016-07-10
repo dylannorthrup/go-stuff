@@ -762,6 +762,16 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	incrementDraftCardsPicked(uuid)
 	c := cardCollection[uuid]
 	info := getCardInfo(c)
+	// Post pick data to draft data url
+	postData := make(map[string]string)
+	postData["type"] = "DraftCardPicked"
+	postData["pack"] = strconv.Itoa(packNum)
+	postData["uuid"] = uuid
+	returnInfo, err := postToURL(Config["post_draft_data_url"], postData)
+	if err == nil && Config["post_debug"] == "true" {
+		fmt.Print(returnInfo)
+	}
+	// Print out information to user
 	fmt.Printf("++ Pack [%v]: You Drafted %v\n", packNum, info)
 	if Config["debug_pack_value"] == "true" {
 		fmt.Printf("==== DEBUG: [DraftCardPickedEvent] Adding %v to current pack value of %v (should total %v)\n", c.plat, packValue, c.plat+packValue)
@@ -802,6 +812,7 @@ func draftPackEvent(f map[string]interface{}) {
 	worthMostGold := Card{name: "bogusvalue"}
 	worthMostPlat := Card{name: "bogusvalue"}
 	cards, _ := f["Cards"].([]interface{})
+	uuids := ""
 	numCards := len(cards)
 	// We need this for stuff when the DraftCard event fires
 	packNum = numCards
@@ -848,7 +859,14 @@ func draftPackEvent(f map[string]interface{}) {
 			prevCard := fmt.Sprintf("'%v', ", c.name)
 			previousContents[numCards] = strings.Replace(previousContents[numCards], prevCard, "", 1)
 		}
+		// record the UUID for posting to our data URL
+		if uuids == "" {
+			uuids = uuid
+		} else {
+			uuids = fmt.Sprintf("%v,%v", uuids, uuid)
+		}
 	}
+	//	fmt.Printf("DEBUG: uuids string is '%v'\n", uuids)
 	// Removing the leading ", "from the packContents and contentsInfo strings
 	if packContents[numCards][len(packContents[numCards])-2:] == ", " {
 		packContents[numCards] = packContents[numCards][:len(packContents[numCards])-2]
@@ -868,6 +886,15 @@ func draftPackEvent(f map[string]interface{}) {
 	fmt.Printf("\tWorth most plat: %v\n", mostPlat)
 	fmt.Printf("\tWorth most gold: %v\n", mostGold)
 	fmt.Printf("\tHave least of: %v\n", haveLeast)
+	// Post pack data to draft data url
+	postData := make(map[string]string)
+	postData["type"] = "DraftPack"
+	postData["pack"] = strconv.Itoa(packNum)
+	postData["uuids"] = uuids
+	returnInfo, err := postToURL(Config["post_draft_data_url"], postData)
+	if err == nil && Config["post_debug"] == "true" {
+		fmt.Print(returnInfo)
+	}
 }
 
 // Comparison functions between cards
@@ -1671,6 +1698,8 @@ func loadDefaults() map[string]string {
 	// Default location to check for version information
 	retMap["version_url"] = "http://doc-x.net/hex/downloads/hexapi_version.txt"
 	// Here so we can copy and paste it later
+	retMap["post_draft_data_url"] = "http://doc-x.net/hex/draft_catcher.rb"
+	// Here so we can copy and paste it later
 	retMap["key"] = "val"
 	return retMap
 }
@@ -1730,11 +1759,22 @@ func grabFromURL(url string) (body string, err error) {
 
 // Utility function to encapsulate sending POST HTTP requests and getting back
 // the results
-func postToURL(targetUrl string, data url.Values) (body string, err error) {
+func postToURL(targetUrl string, data map[string]string) (body string, err error) {
+	// Short circuit this if folks want to opt out
+	if Config["no_draft_data_posting"] == "true" {
+		return
+	}
+	// Convert data into a url.Values variable
+	v := url.Values{}
+	for key, val := range data {
+		v.Add(key, val)
+	}
 	// Set up a flag to see if we had a problem
 	gotHTTPError := false
+	// Combine targetUrl and parameters to get the url we want to get/post to
+	dataUrl := fmt.Sprintf("%v?%v", targetUrl, v.Encode())
 	// Get the content from 'url'
-	resp, err := http.PostForm(targetUrl, data)
+	resp, err := http.Get(dataUrl)
 	if err != nil {
 		gotHTTPError = true
 	}
