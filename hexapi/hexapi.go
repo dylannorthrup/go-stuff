@@ -42,6 +42,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"regexp"
@@ -1707,6 +1708,33 @@ func grabFromURL(url string) (body string, err error) {
 	gotHTTPError := false
 	// Get the content from 'url'
 	resp, err := http.Get(url)
+	if err != nil {
+		gotHTTPError = true
+	}
+	// If we had a problem, return a blank string and the error code
+	// Othwerise, read in the contents of the URL and pass it back
+	if gotHTTPError {
+		return "", err
+	} else {
+		defer resp.Body.Close()
+		body, ioErr := ioutil.ReadAll(resp.Body)
+		if ioErr != nil {
+			log.Fatal(ioErr)
+		}
+		// We like to deal with strings over byte arrays, so stringify before
+		// returning.
+		strBody := string(body)
+		return strBody, err
+	}
+}
+
+// Utility function to encapsulate sending POST HTTP requests and getting back
+// the results
+func postToURL(targetUrl string, data url.Values) (body string, err error) {
+	// Set up a flag to see if we had a problem
+	gotHTTPError := false
+	// Get the content from 'url'
+	resp, err := http.PostForm(targetUrl, data)
 	if err != nil {
 		gotHTTPError = true
 	}
