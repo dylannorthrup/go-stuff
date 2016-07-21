@@ -16,6 +16,8 @@ package main
 //    + GameStarted
 //    + GameEnded
 //    + PlayerUpdated
+//    + Tournament
+//    - Ladder
 //    * CardUpdated (Some handled, but more work can eb done)
 //  + Track pack data and indicate which cards were picked when packs wheel
 //  + Track Profit/Loss for drafts
@@ -1588,6 +1590,16 @@ func valueRequest(rw http.ResponseWriter, req *http.Request) {
 	printCollectionValue()
 }
 
+func acceptsRequest(rw http.ResponseWriter, req *http.Request) {
+	fmt.Printf("Got an accepts request.\n")
+	//	headers := rw.Header()
+	//headers.Add("Keep-Alive", "timeout=15, max=20")
+	rw.Write([]byte("All"))
+	//rw.Write([]byte("SaveDeck|DraftPack|DraftCardPicked|Collection|Inventory|SaveTalents|Login|Tournament|Ladder|CardUpdated|PlayerUpdated\n"))
+	//status, err := rw.WriteHeader(http.StatusOK)
+	return
+}
+
 func printCollectionValue() {
 	// Zero out the gold and plat values
 	collectionGoldValue = 0
@@ -1609,11 +1621,25 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		panic("AIEEE: Could not readAll for req.Body")
 	}
+	// If the client's asking for keep-alive parameters, send back something reasonable
+	if req.Header["Connection"][0] == "keep-alive" {
+		fmt.Printf("Got a keep-alive request. Closing it.\n")
+		headers := rw.Header()
+		headers.Add("Keep-Alive", "timeout=1, max=1")
+		//headers.Add("Connection", "close")
+		rw.WriteHeader(http.StatusOK)
+		//status, err := rw.WriteHeader(http.StatusOK)
+		return
+	}
+	if len(body) == 0 {
+		fmt.Printf("Got blank body. Here are the headers:\n%v\n", req.Header)
+		return
+	}
 	var f map[string]interface{}
 	// fmt.Printf("Contents of body:\n\t%v\n", string(body))
 	err = json.Unmarshal(body, &f)
 	if err != nil {
-		fmt.Printf("Could not unmarshall the following body:\n\t%v\n", string(body))
+		fmt.Printf("Could not unmarshall the following body:\n\t>>>%v<<<\n", string(body))
 		return
 		// panic("AIEEE: Could not Unmarshall the body")
 	}
@@ -1989,6 +2015,8 @@ func main() {
 	http.HandleFunc("/", incoming)
 	http.HandleFunc("/dump", dumpRequest)
 	http.HandleFunc("/value", valueRequest)
+	http.HandleFunc("/acecpts.txt", acceptsRequest)
+	http.HandleFunc("/accepts.txt", acceptsRequest)
 	// Now that we've registered what we want, start it up
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }
