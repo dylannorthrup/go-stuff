@@ -1639,11 +1639,12 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	// fmt.Printf("Contents of body:\n\t%v\n", string(body))
 	err = json.Unmarshal(body, &f)
 	if err != nil {
-		fmt.Printf("Could not unmarshall the following body:\n\t>>>%v<<<\n", string(body))
+		// fmt.Printf("Error while unmarshaling incoming thing: >>>%v<<<", err)
+		fmt.Printf("Could not unmarshal the following body:\n\t>>>%v<<<\n", string(body))
 		return
-		// panic("AIEEE: Could not Unmarshall the body")
+		// panic("AIEEE: Could not Unmarshal the body")
 	}
-	//  fmt.Println("DEBUG: Unmarshall successful")
+	//  fmt.Println("DEBUG: Unmarshal successful")
 	//  fmt.Println("DEBUG: Message is", f["Message"])
 	skipDupes := true
 	msg := f["Message"]
@@ -1770,22 +1771,21 @@ func grabFromURL(url string) (body string, err error) {
 	// Othwerise, read in the contents of the URL and pass it back
 	if gotHTTPError {
 		return "", err
-	} else {
-		defer resp.Body.Close()
-		body, ioErr := ioutil.ReadAll(resp.Body)
-		if ioErr != nil {
-			log.Fatal(ioErr)
-		}
-		// We like to deal with strings over byte arrays, so stringify before
-		// returning.
-		strBody := string(body)
-		return strBody, err
 	}
+	defer resp.Body.Close()
+	bodyBytes, ioErr := ioutil.ReadAll(resp.Body)
+	if ioErr != nil {
+		log.Fatal(ioErr)
+	}
+	// We like to deal with strings over byte arrays, so stringify before
+	// returning.
+	strBody := string(bodyBytes)
+	return strBody, err
 }
 
 // Utility function to encapsulate sending POST HTTP requests and getting back
 // the results
-func postToURL(targetUrl string, data map[string]string) (body string, err error) {
+func postToURL(targetURL string, data map[string]string) (body string, err error) {
 	// Short circuit this if folks want to opt out
 	if Config["no_draft_data_posting"] == "true" {
 		return
@@ -1797,10 +1797,10 @@ func postToURL(targetUrl string, data map[string]string) (body string, err error
 	}
 	// Set up a flag to see if we had a problem
 	gotHTTPError := false
-	// Combine targetUrl and parameters to get the url we want to get/post to
-	dataUrl := fmt.Sprintf("%v?%v", targetUrl, v.Encode())
+	// Combine targetURL and parameters to get the url we want to get/post to
+	dataURL := fmt.Sprintf("%v?%v", targetURL, v.Encode())
 	// Get the content from 'url'
-	resp, err := http.Get(dataUrl)
+	resp, err := http.Get(dataURL)
 	if err != nil {
 		gotHTTPError = true
 	}
@@ -1808,17 +1808,16 @@ func postToURL(targetUrl string, data map[string]string) (body string, err error
 	// Othwerise, read in the contents of the URL and pass it back
 	if gotHTTPError {
 		return "", err
-	} else {
-		defer resp.Body.Close()
-		body, ioErr := ioutil.ReadAll(resp.Body)
-		if ioErr != nil {
-			log.Fatal(ioErr)
-		}
-		// We like to deal with strings over byte arrays, so stringify before
-		// returning.
-		strBody := string(body)
-		return strBody, err
 	}
+	defer resp.Body.Close()
+	bodyBytes, ioErr := ioutil.ReadAll(resp.Body)
+	if ioErr != nil {
+		log.Fatal(ioErr)
+	}
+	// We like to deal with strings over byte arrays, so stringify before
+	// returning.
+	strBody := string(bodyBytes)
+	return strBody, err
 }
 
 // Retrieve card prices and AA card info to prime the collection pump
