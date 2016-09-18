@@ -35,7 +35,6 @@ package main
 //	- Figure out why the first card of a draft pack prints twice and fix that
 //
 //  Stretch Goals
-//  - Post card data to remote URL (for collating draw data)
 
 import (
 	"bufio"
@@ -45,7 +44,6 @@ import (
 	"log"
 	"math"
 	"net/http"
-	"net/url"
 	"os"
 	"reflect"
 	"regexp"
@@ -766,15 +764,6 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	incrementDraftCardsPicked(uuid)
 	c := cardCollection[uuid]
 	info := getCardInfo(c)
-	// Post pick data to draft data url
-	postData := make(map[string]string)
-	postData["type"] = "DraftCardPicked"
-	postData["pack"] = strconv.Itoa(packNum)
-	postData["uuid"] = uuid
-	returnInfo, err := postToURL(Config["post_draft_data_url"], postData)
-	if err == nil && Config["post_debug"] == "true" {
-		fmt.Print(returnInfo)
-	}
 	// Print out information to user
 	fmt.Printf("++ Pack [%v]: You Drafted %v\n", packNum, info)
 	if Config["debug_pack_value"] == "true" {
@@ -904,15 +893,6 @@ func draftPackEvent(f map[string]interface{}) {
 	fmt.Printf("\tWorth most plat: %v\n", mostPlat)
 	fmt.Printf("\tWorth most gold: %v\n", mostGold)
 	fmt.Printf("\tHave least of: %v\n", haveLeast)
-	// Post pack data to draft data url
-	postData := make(map[string]string)
-	postData["type"] = "DraftPack"
-	postData["pack"] = strconv.Itoa(packNum)
-	postData["uuids"] = uuids
-	returnInfo, err := postToURL(Config["post_draft_data_url"], postData)
-	if err == nil && Config["post_debug"] == "true" {
-		fmt.Print(returnInfo)
-	}
 }
 
 // Comparison functions between cards
@@ -1803,43 +1783,6 @@ func grabFromURL(url string) (body string, err error) {
 	gotHTTPError := false
 	// Get the content from 'url'
 	resp, err := http.Get(url)
-	if err != nil {
-		gotHTTPError = true
-	}
-	// If we had a problem, return a blank string and the error code
-	// Othwerise, read in the contents of the URL and pass it back
-	if gotHTTPError {
-		return "", err
-	}
-	defer resp.Body.Close()
-	bodyBytes, ioErr := ioutil.ReadAll(resp.Body)
-	if ioErr != nil {
-		log.Fatal(ioErr)
-	}
-	// We like to deal with strings over byte arrays, so stringify before
-	// returning.
-	strBody := string(bodyBytes)
-	return strBody, err
-}
-
-// Utility function to encapsulate sending POST HTTP requests and getting back
-// the results
-func postToURL(targetURL string, data map[string]string) (body string, err error) {
-	// Short circuit this if folks want to opt out
-	if Config["no_draft_data_posting"] == "true" {
-		return
-	}
-	// Convert data into a url.Values variable
-	v := url.Values{}
-	for key, val := range data {
-		v.Add(key, val)
-	}
-	// Set up a flag to see if we had a problem
-	gotHTTPError := false
-	// Combine targetURL and parameters to get the url we want to get/post to
-	dataURL := fmt.Sprintf("%v?%v", targetURL, v.Encode())
-	// Get the content from 'url'
-	resp, err := http.Get(dataURL)
 	if err != nil {
 		gotHTTPError = true
 	}
