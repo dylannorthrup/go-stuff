@@ -32,6 +32,7 @@ package main
 //  + Remove card you drafted from the list of 'MISSING CARDS' (or mark it in some way) bug FIXED
 //  - Make Tournament update messages while in tournament less chatty and more informative
 //  - Add query param when checking for version number for version tracking
+//	- Figure out why the first card of a draft pack prints twice and fix that
 //
 //  Stretch Goals
 //  - Post card data to remote URL (for collating draw data)
@@ -155,6 +156,7 @@ var draftCardsPicked = make(map[string]int)
 var sessionPlatProfit int
 var sessionGoldProfit int
 var lastAPIMessage string
+var lastDraftPack string
 
 // var matches []interface{}
 // var players []interface{}
@@ -814,8 +816,13 @@ func draftPackEvent(f map[string]interface{}) {
 	worthMostGold := Card{name: "bogusvalue"}
 	worthMostPlat := Card{name: "bogusvalue"}
 	cards, _ := f["Cards"].([]interface{})
+	cardsString := fmt.Sprintf("%v", cards)
 	uuids := ""
 	numCards := len(cards)
+	// For some reason we're getting DraftPack messages with zero cards
+	if numCards == 0 {
+		return
+	}
 	// We need this for stuff when the DraftCard event fires
 	packNum = numCards
 	// reset the pack value for a new pack along with all the pack tracking arrays
@@ -826,6 +833,15 @@ func draftPackEvent(f map[string]interface{}) {
 			previousContents[n] = ""
 		}
 	}
+	// Do a check to see if we've seen this message before
+	if lastDraftPack == cardsString {
+		if Config["debug_duplicate_draftpack"] == "true" {
+			fmt.Println("DEBUG: Duplicate Draft Pack. Discarding.")
+			fmt.Printf("DEBUG cards: >>>>%s<<<<<\n", cardsString)
+		}
+		return
+	}
+
 	// If we've gone through 7 or more packs, copy the previous pack contents to this pack's
 	// contents so we can figure out what's missing
 	if numCards < (packSize - 7) {
@@ -870,7 +886,7 @@ func draftPackEvent(f map[string]interface{}) {
 	}
 	//	fmt.Printf("DEBUG: uuids string is '%v'\n", uuids)
 	// Removing the leading ", "from the packContents and contentsInfo strings
-	if packContents[numCards][len(packContents[numCards])-2:] == ", " {
+	if (len(packContents[numCards]) > 1) && (packContents[numCards][len(packContents[numCards])-2:] == ", ") {
 		packContents[numCards] = packContents[numCards][:len(packContents[numCards])-2]
 	}
 	if contentsInfo[len(contentsInfo)-2:] == ", " {
@@ -1384,6 +1400,14 @@ func saveDeckEvent(f map[string]interface{}) {
 	fmt.Printf("Saved Deck '%v' for Champion '%v' saved. The deck's value is %vp and %vg\n", deckName, champion, deckPValue, deckGValue)
 }
 
+func ladderEvent(f map[string]interface{}) {
+	fmt.Println("In function ladderEvent")
+	ladderType := f["Type"]
+	tier := f["Tier"]
+	cosmicRank := f["CosmicRank"]
+	fmt.Printf("Something Something ladderType: %s\tTier: %s\tCosmic Rank: %s\n ", ladderType, tier, cosmicRank)
+}
+
 func tournamentEvent(f map[string]interface{}) {
 	// fmt.Println("In function of tournamentEvent")
 
@@ -1622,7 +1646,11 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 		panic("AIEEE: Could not readAll for req.Body")
 	}
 	// If the client's asking for keep-alive parameters, send back something reasonable
-	if req.Header["Connection"][0] == "keep-alive" {
+	connectHeader := req.Header.Get("Connection")
+	if Config["debug_connectionHeaders"] == "true" {
+		fmt.Printf("DEBUG: connectHeader is >>>%s<<<\n", connectHeader)
+	}
+	if connectHeader == "keep-alive" {
 		fmt.Printf("Got a keep-alive request. Closing it.\n")
 		headers := rw.Header()
 		headers.Add("Keep-Alive", "timeout=1, max=1")
@@ -1639,15 +1667,20 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	// fmt.Printf("Contents of body:\n\t%v\n", string(body))
 	err = json.Unmarshal(body, &f)
 	if err != nil {
-		// fmt.Printf("Error while unmarshaling incoming thing: >>>%v<<<", err)
-		fmt.Printf("Could not unmarshal the following body:\n\t>>>%v<<<\n", string(body))
+		fmt.Printf("ERROR: Could not unmarshal the following body:\n\t>>>%v<<<\n", string(body))
 		return
-		// panic("AIEEE: Could not Unmarshal the body")
 	}
-	//  fmt.Println("DEBUG: Unmarshal successful")
-	//  fmt.Println("DEBUG: Message is", f["Message"])
-	skipDupes := true
+
 	msg := f["Message"]
+	// For some reason we're getting extraneous DraftPack messages with 0 cards in them. We need to ignore those
+	if msg == "DraftPack" && len(f["Cards"].([]interface{})) == 0 {
+		if Config["debug_empty_draftpack"] == "true" {
+			fmt.Println("Skipping empty DraftPack message")
+		}
+		return
+	}
+
+	skipDupes := true
 	if msg == "Collection" {
 		if f["Action"] == "Update" {
 			skipDupes = false
@@ -1655,8 +1688,11 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	}
 	// Check to see if the last API message is the same as this one (as long as we're not in a Collection Update)
 	if lastAPIMessage == string(body) && skipDupes {
-		// fmt.Println("INFO: Duplicate API Message. Discarding.")
-		// return
+		if Config["debug_duplicate_api_messages"] == "true" {
+			fmt.Println("DEBUG: Duplicate API Message. Discarding.")
+			fmt.Printf("DEBUG Message: >>>>%s<<<<<\n", string(body))
+		}
+		return
 	}
 	lastAPIMessage = string(body)
 	// If we want to log API calls, make use of the lastAPIMessage we just set and log it here
@@ -1686,6 +1722,9 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	case "GameStarted":
 		//    fmt.Printf("Got a Game Started message\n")
 		gameStartedEvent()
+	case "Ladder":
+		//    fmt.Printf("Got a Game Started message\n")
+		ladderEvent(f)
 	case "SaveDeck":
 		//    fmt.Printf("Got a Save Deckmessage\n")
 		saveDeckEvent(f)
