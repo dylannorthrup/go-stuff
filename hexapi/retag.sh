@@ -7,6 +7,8 @@ cd $DIR
 VERS=$(awk -F\" '/var programVersion/ {print $2}' hexapi.go)
 
 echo "Tagging version ${VERS}"
+git tag -d ${VERS}
+git push origin :refs/tags/${VERS}
 git tag ${VERS}
 git push --tags
 
