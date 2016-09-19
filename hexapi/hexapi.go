@@ -63,6 +63,7 @@ type Card struct {
 	rarity string
 	gold   int
 	plat   int
+	wiw    [18]int
 	item   bool // True if it's an inventory item, false if it's a card
 }
 
@@ -662,7 +663,7 @@ func printCardInfo(c Card) {
 
 func getCardInfo(c Card) string {
 	if Config["detailed_card_info"] == "true" {
-		return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold)
+		return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg 9:%v, 10:%v", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold, c.wiw[9], c.wiw[10])
 	}
 	return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg", c.name, c.qty, c.eaqty, c.plat, c.gold)
 }
@@ -1565,10 +1566,6 @@ func parseTournamentGame(tgh map[string]interface{}) (game tGame) {
 	return game
 }
 
-//func printTournamentStatus() {
-//
-//}
-
 func getCardArrayValue(thing []interface{}) (pValue, gValue int) {
 	pValue = 0
 	gValue = 0
@@ -1582,6 +1579,11 @@ func getCardArrayValue(thing []interface{}) (pValue, gValue int) {
 		gValue += c.gold
 	}
 	return
+}
+
+func refreshRequest(rw http.ResponseWriter, req *http.Request) {
+	fmt.Println("Request to refresh collection data received.")
+	getCardPriceInfo()
 }
 
 func dumpRequest(rw http.ResponseWriter, req *http.Request) {
@@ -1859,6 +1861,7 @@ func getCardPriceInfo() {
 		var plat int
 		var g = make(map[string]interface{})
 		var gold int
+		var dpc = make(map[string]interface{})
 
 		// Reduce the spamminess of loading collection info
 		loadingCacheOrPriceData = true
@@ -1882,6 +1885,9 @@ func getCardPriceInfo() {
 			plat = int(p["avg"].(float64))
 			g = c["GOLD"].(map[string]interface{})
 			gold = int(g["avg"].(float64))
+			dpc = c["draft_pct_chances"].(map[string]interface{})
+			tempDpc := [18]int{0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+
 			// fmt.Printf("Working on '%v'\nName is '%v', rarity is %v and uuid is %v and avg plat of %v and avg gold of %v\n", card, name, rarity, uuid, plat, gold)
 			// If we've already got a card with that UUID in the cardCollection, update the info
 			if _, ok := cardCollection[uuid]; ok {
@@ -1893,10 +1899,64 @@ func getCardPriceInfo() {
 				c.plat = plat
 				c.gold = gold
 				c.rarity = rarity
+				if dpc["9"] != nil {
+					c.wiw[9] = floatToInt(dpc["9"].(float64))
+				}
+				if dpc["10"] != nil {
+					c.wiw[10] = floatToInt(dpc["10"].(float64))
+				}
+				if dpc["11"] != nil {
+					c.wiw[11] = floatToInt(dpc["11"].(float64))
+				}
+				if dpc["12"] != nil {
+					c.wiw[12] = floatToInt(dpc["12"].(float64))
+				}
+				if dpc["13"] != nil {
+					c.wiw[13] = floatToInt(dpc["13"].(float64))
+				}
+				if dpc["14"] != nil {
+					c.wiw[14] = floatToInt(dpc["14"].(float64))
+				}
+				if dpc["15"] != nil {
+					c.wiw[15] = floatToInt(dpc["15"].(float64))
+				}
+				if dpc["16"] != nil {
+					c.wiw[16] = floatToInt(dpc["16"].(float64))
+				}
+				if dpc["17"] != nil {
+					c.wiw[17] = floatToInt(dpc["17"].(float64))
+				}
 				cardCollection[uuid] = c
 			} else {
 				// If it doesn't exist, create a new card with appropriate values and add it to the map
-				c := Card{name: name, uuid: uuid, plat: plat, gold: gold, rarity: rarity}
+				c := Card{name: name, uuid: uuid, plat: plat, gold: gold, rarity: rarity, wiw: tempDpc}
+				if dpc["9"] != nil {
+					c.wiw[9] = floatToInt(dpc["9"].(float64))
+				}
+				if dpc["10"] != nil {
+					c.wiw[10] = floatToInt(dpc["10"].(float64))
+				}
+				if dpc["11"] != nil {
+					c.wiw[11] = floatToInt(dpc["11"].(float64))
+				}
+				if dpc["12"] != nil {
+					c.wiw[12] = floatToInt(dpc["12"].(float64))
+				}
+				if dpc["13"] != nil {
+					c.wiw[13] = floatToInt(dpc["13"].(float64))
+				}
+				if dpc["14"] != nil {
+					c.wiw[14] = floatToInt(dpc["14"].(float64))
+				}
+				if dpc["15"] != nil {
+					c.wiw[15] = floatToInt(dpc["15"].(float64))
+				}
+				if dpc["16"] != nil {
+					c.wiw[16] = floatToInt(dpc["16"].(float64))
+				}
+				if dpc["17"] != nil {
+					c.wiw[17] = floatToInt(dpc["17"].(float64))
+				}
 				cardCollection[uuid] = c
 				// And update our name to uuid map
 				ntum[name] = uuid
@@ -1998,6 +2058,7 @@ func main() {
 	http.HandleFunc("/value", valueRequest)
 	http.HandleFunc("/acecpts.txt", acceptsRequest)
 	http.HandleFunc("/accepts.txt", acceptsRequest)
+	http.HandleFunc("/refresh", refreshRequest)
 	// Now that we've registered what we want, start it up
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }
