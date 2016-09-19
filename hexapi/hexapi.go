@@ -668,14 +668,14 @@ func getCardInfo(c Card) string {
 func getCardInfoWithWheelInfo(c Card, place int) string {
 	if place == 0 {
 		if Config["detailed_card_info"] == "true" {
-			return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg 9:%v, 10:%v", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold, c.wiw[9], c.wiw[10])
+			return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold)
 		}
 		return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg", c.name, c.qty, c.eaqty, c.plat, c.gold)
 	}
 	if Config["detailed_card_info"] == "true" {
-		return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg 9:%v, 10:%v", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold, c.wiw[9], c.wiw[10])
+		return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg %3d%%", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold, c.wiw[place])
 	}
-	return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg - %vwheel%%", c.name, c.qty, c.eaqty, c.plat, c.gold, c.wiw[place])
+	return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg - %3d%% likely to wheel", c.name, c.qty, c.eaqty, c.plat, c.gold, c.wiw[place])
 }
 
 func getCardCount(uuid string) int {
@@ -810,6 +810,7 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	currentlyDrafting = false
 }
 
+// Utility function to calculate absolute value of an int
 func intAbs(x int) int {
 	if x < 0 {
 		return -x
@@ -820,12 +821,9 @@ func intAbs(x int) int {
 	return x
 }
 
-// 17 -> 9
-// 16 -> 10
-// 15 -> 11
-
+// Utility function to calculate what the "wheel" pack is based on the current number of cards in the pack
 func packToWheelNumber(pack int) int {
-	if pack < (packSize - 7) {
+	if pack < (packSize - 8) {
 		return 0
 	}
 	wn := intAbs(17 - pack)
@@ -847,14 +845,9 @@ func draftPackEvent(f map[string]interface{}) {
 	if numCards == 0 {
 		return
 	}
-	// OK... i fucked up.... if numCards = 17, wheelPackNum = 9; if numCards = 16, wheelPackNum = 10.... TODO: FIXME
+	// Figure out the wheelPackNum so we can do some stuff with it later....
 	wheelPackNum = packToWheelNumber(numCards)
-	// if numCards < (packSize - 7) {
-	// 	wheelPackNum = intAbs(numCards-17) + 9
-	// } else {
-	// 	wheelPackNum = 0
-	// }
-	fmt.Printf("DEBUG: WheelPackNum: %v\n", wheelPackNum)
+
 	// We need this for stuff when the DraftCard event fires
 	packNum = numCards
 	// reset the pack value for a new pack along with all the pack tracking arrays
@@ -904,7 +897,7 @@ func draftPackEvent(f map[string]interface{}) {
 		if wheelPackNum == 0 {
 			contentsInfo = fmt.Sprintf("'[%v %2d - %3dp/%3dg] %v'\n\t%v", c.rarity, c.qty, c.plat, c.gold, c.name, contentsInfo)
 		} else {
-			contentsInfo = fmt.Sprintf("'[%v %2d - %3dp/%3dg %vw%% (%v)] %v'\n\t%v", c.rarity, c.qty, c.plat, c.gold, c.wiw[wheelPackNum], wheelPackNum, c.name, contentsInfo)
+			contentsInfo = fmt.Sprintf("'[%v %2d - %3dp/%3dg %3d%%] %v'\n\t%v", c.rarity, c.qty, c.plat, c.gold, c.wiw[wheelPackNum], c.name, contentsInfo)
 		}
 
 		// If we have (packSize - 7) or more cards in pack, save what we've got so we've got so we
@@ -1472,7 +1465,7 @@ func tournamentEvent(f map[string]interface{}) {
 		}
 		// They're not the same, so make them the same now
 		tournamentPlayerList = players
-		fmt.Printf("\t%v Players currently in tournament:\n", len(tournamentPlayerList))
+		fmt.Printf("*** %v Players currently in tournament:\n", len(tournamentPlayerList))
 		for _, p := range tournamentPlayerList {
 			pHash := p.(map[string]interface{})
 			pName := pHash["Name"]
