@@ -4,7 +4,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd $DIR
-VERS=$(awk -F\" '/var programVersion/ {print $2}' hexapi/hexapi.go)
+VERS=$(awk -F\" '/var programVersion/ {print $2}' hexapi.go)
 
 echo "Tagging version ${VERS}"
 git tag ${VERS}
@@ -17,3 +17,4 @@ git tag -d current
 git push origin :refs/tags/current
 git tag stable
 git tag current
+git push --tags
