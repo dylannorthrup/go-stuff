@@ -662,10 +662,20 @@ func printCardInfo(c Card) {
 }
 
 func getCardInfo(c Card) string {
+	return getCardInfoWithWheelInfo(c, 0)
+}
+
+func getCardInfoWithWheelInfo(c Card, place int) string {
+	if place == 0 {
+		if Config["detailed_card_info"] == "true" {
+			return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg 9:%v, 10:%v", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold, c.wiw[9], c.wiw[10])
+		}
+		return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg", c.name, c.qty, c.eaqty, c.plat, c.gold)
+	}
 	if Config["detailed_card_info"] == "true" {
 		return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg 9:%v, 10:%v", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold, c.wiw[9], c.wiw[10])
 	}
-	return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg", c.name, c.qty, c.eaqty, c.plat, c.gold)
+	return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg - %vwheel%%", c.name, c.qty, c.eaqty, c.plat, c.gold, c.wiw[place])
 }
 
 func getCardCount(uuid string) int {
@@ -800,6 +810,29 @@ func draftCardPickedEvent(f map[string]interface{}) {
 	currentlyDrafting = false
 }
 
+func intAbs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	if x == 0 {
+		return 0 // return correctly abs(-0)
+	}
+	return x
+}
+
+// 17 -> 9
+// 16 -> 10
+// 15 -> 11
+
+func packToWheelNumber(pack int) int {
+	if pack < (packSize - 7) {
+		return 0
+	}
+	wn := intAbs(17 - pack)
+	wn += 9
+	return wn
+}
+
 // Process draft pack choices
 func draftPackEvent(f map[string]interface{}) {
 	haveLeastOf := Card{name: "bogusvalue"}
@@ -809,10 +842,19 @@ func draftPackEvent(f map[string]interface{}) {
 	cardsString := fmt.Sprintf("%v", cards)
 	uuids := ""
 	numCards := len(cards)
+	var wheelPackNum int
 	// For some reason we're getting DraftPack messages with zero cards
 	if numCards == 0 {
 		return
 	}
+	// OK... i fucked up.... if numCards = 17, wheelPackNum = 9; if numCards = 16, wheelPackNum = 10.... TODO: FIXME
+	wheelPackNum = packToWheelNumber(numCards)
+	// if numCards < (packSize - 7) {
+	// 	wheelPackNum = intAbs(numCards-17) + 9
+	// } else {
+	// 	wheelPackNum = 0
+	// }
+	fmt.Printf("DEBUG: WheelPackNum: %v\n", wheelPackNum)
 	// We need this for stuff when the DraftCard event fires
 	packNum = numCards
 	// reset the pack value for a new pack along with all the pack tracking arrays
@@ -859,7 +901,11 @@ func draftPackEvent(f map[string]interface{}) {
 		worthMostPlat = mostPlat(worthMostPlat, c)
 		// The first time we have a blank comma at the end, but we remove that later
 		packContents[numCards] = fmt.Sprintf("'%v', %v", c.name, packContents[numCards])
-		contentsInfo = fmt.Sprintf("'[%v %2d - %3dp/%3dg] %v'\n\t%v", c.rarity, c.qty, c.plat, c.gold, c.name, contentsInfo)
+		if wheelPackNum == 0 {
+			contentsInfo = fmt.Sprintf("'[%v %2d - %3dp/%3dg] %v'\n\t%v", c.rarity, c.qty, c.plat, c.gold, c.name, contentsInfo)
+		} else {
+			contentsInfo = fmt.Sprintf("'[%v %2d - %3dp/%3dg %vw%% (%v)] %v'\n\t%v", c.rarity, c.qty, c.plat, c.gold, c.wiw[wheelPackNum], wheelPackNum, c.name, contentsInfo)
+		}
 
 		// If we have (packSize - 7) or more cards in pack, save what we've got so we've got so we
 		// can determine what others picked
@@ -887,9 +933,9 @@ func draftPackEvent(f map[string]interface{}) {
 	if numCards < (packSize - 7) {
 		fmt.Printf("-- MISSING CARDS: %v\n", previousContents[numCards])
 	}
-	mostGold := getCardInfo(worthMostGold)
-	mostPlat := getCardInfo(worthMostPlat)
-	haveLeast := getCardInfo(haveLeastOf)
+	mostGold := getCardInfoWithWheelInfo(worthMostGold, wheelPackNum)
+	mostPlat := getCardInfoWithWheelInfo(worthMostPlat, wheelPackNum)
+	haveLeast := getCardInfoWithWheelInfo(haveLeastOf, wheelPackNum)
 	fmt.Println("** Computed best picks from pack:")
 	fmt.Printf("\tWorth most plat: %v\n", mostPlat)
 	fmt.Printf("\tWorth most gold: %v\n", mostGold)
