@@ -177,7 +177,7 @@ var priceRefreshCacheTimer *time.Timer
 var collectionTimerPeriod = time.Second * time.Duration(20)
 var collectionCacheTimer *time.Timer
 
-// UUID to name lookup happens 1 inute after the last lookup was attempted
+// UUID to name lookup happens 1 minute after the last lookup was attempted
 var nameLookupTimerPeriod = time.Minute * time.Duration(1)
 var nameLookupCacheTimer *time.Timer
 
@@ -637,7 +637,7 @@ func checkProgramVersion() {
 		fmt.Printf("Running up to date version '%v'\n", version)
 		time.Sleep(time.Second)
 	} else {
-		downloadURL := fmt.Sprintf("http://doc-x.net/hex/downlaods/hexapi_%v_%v", programPlatform, programArch)
+		downloadURL := fmt.Sprintf("http://doc-x.net/hex/downloads/hexapi_%v_%v", programPlatform, programArch)
 		if programPlatform == "windows" {
 			downloadURL = fmt.Sprintf("%v.exe", downloadURL)
 		}
@@ -1636,7 +1636,7 @@ func valueRequest(rw http.ResponseWriter, req *http.Request) {
 }
 
 func acceptsRequest(rw http.ResponseWriter, req *http.Request) {
-	fmt.Printf("Got an accepts request.\n")
+	// fmt.Printf("Got an accepts request.\n")
 	//	headers := rw.Header()
 	//headers.Add("Keep-Alive", "timeout=15, max=20")
 	rw.Write([]byte("All"))
