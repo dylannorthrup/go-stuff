@@ -121,7 +121,7 @@ type tPlayer struct {
 }
 
 // The Version of the program so we can figure out if we're using the most recent version
-var programVersion = "0.10"
+var programVersion = "0.11"
 
 // Vars so we can figure out what our update URL is
 var programName = os.Args[0]
@@ -198,6 +198,8 @@ var cardCollectionMap = map[int]string{
 	256: "Tunnelled",
 	512: "Choose Effect",
 }
+
+var ladderDivisionLookup = []string{"Bronze", "Silver", "Gold", "Platinum", "Cosmic"}
 
 // FUNCTIONS
 
@@ -625,6 +627,10 @@ func changeDraftCardsCount(uuid string, i int) {
 // the kind users that they should upgrade.
 func checkProgramVersion() {
 	fmt.Print("Checking for program updates . . . ")
+	if Config["local_price_file"] != "" {
+		fmt.Printf("Using local price file, so we'll skip the version check\n")
+		return
+	}
 	versionURL := Config["version_url"]
 	body, err := grabFromURL(versionURL)
 	if err != nil {
@@ -1114,7 +1120,7 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 	}
 	if action == "Overwrite" {
 		if Config["debug_collection_update"] == "true" {
-			fmt.Printf("Got an Overwrite Collection message. Doing full update of card collection for %v.\n", message)
+			// fmt.Printf("Got an Overwrite Collection message. Doing full update of card collection for %v.\n", message)
 		}
 		// If this is an Overwrite message, first thing we do is reset counts on all cards
 		for k, v := range cardCollection {
@@ -1122,7 +1128,9 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 			// item     Y         N
 			// card     N         Y
 			if (v.item == true && zeroItems) || (v.item == false && !zeroItems) {
-				// fmt.Printf("Doing Zero for %v (%v) with ZeroItems set to %v\n", c.name, c.item, zeroItems)
+				if Config["debug_item_updates"] == "true" {
+					fmt.Printf("Doing Zero for %v (%v) with ZeroItems set to %v\n", v.name, v.item, zeroItems)
+				}
 				v.qty = 0
 				v.eaqty = 0
 				cardCollection[k] = v
@@ -1421,11 +1429,17 @@ func saveDeckEvent(f map[string]interface{}) {
 }
 
 func ladderEvent(f map[string]interface{}) {
-	fmt.Println("In function ladderEvent")
+	// fmt.Println("In function ladderEvent")
 	ladderType := f["Type"]
 	tier := f["Tier"]
+	division := floatToInt(f["Division"].(float64))
+	divisionName := ladderDivisionLookup[division]
 	cosmicRank := f["CosmicRank"]
-	fmt.Printf("Something Something ladderType: %s\tTier: %s\tCosmic Rank: %s\n ", ladderType, tier, cosmicRank)
+	if division == 4 {
+		fmt.Printf("Your %s Cosmic Rank is %v\n", ladderType, cosmicRank)
+	} else {
+		fmt.Printf("Your %s ladder rank is %v %v\n ", ladderType, divisionName, tier)
+	}
 }
 
 func tournamentEvent(f map[string]interface{}) {
@@ -1688,7 +1702,7 @@ func incoming(rw http.ResponseWriter, req *http.Request) {
 	// fmt.Printf("Contents of body:\n\t%v\n", string(body))
 	err = json.Unmarshal(body, &f)
 	if err != nil {
-		fmt.Printf("ERROR: Could not unmarshal the following body:\n\t>>>%v<<<\n", string(body))
+		fmt.Printf("ERROR: Could not unmarshal the following body:\n\t>>>%v<<< (could not unmarshall error)\n", string(body))
 		return
 	}
 
@@ -1805,11 +1819,13 @@ func readConfig(fname string, config map[string]string) map[string]string {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	re1, err := regexp.Compile(`^(.*)=(.*)$`)
+	re1, err := regexp.Compile(`^([^#]*)=(.*)$`)
 	for scanner.Scan() {
 		text := scanner.Text()
 		result := re1.FindStringSubmatch(text)
-		config[result[1]] = result[2]
+		if len(result) > 0 {
+			config[result[1]] = result[2]
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
@@ -2081,6 +2097,12 @@ func main() {
 	// Read config file
 	Config = loadDefaults()
 	Config = readConfig("config.ini", Config)
+	if Config["debug_config_values"] == "true" {
+		fmt.Println("Config Hash:")
+		for k, v := range Config {
+			fmt.Printf("   %v = %v\n", k, v)
+		}
+	}
 	//  fmt.Printf("Using the following configuration values\n\tPrice URL (price_url): '%v'\n\tCollection file (collection_file): '%v'\n\tAlternate Art/Promo List URL(aa_promo_url): '%v'\n", Config["price_url"], Config["collection_file"], Config["aa_promo_url"])
 	// Check to see if we're running the most recent version
 	checkProgramVersion()
