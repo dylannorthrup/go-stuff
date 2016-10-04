@@ -1,4 +1,4 @@
-package hexapi
+package main
 
 //  Things needed to do
 //  + Parse JSON into something I can do stuff with
