@@ -626,11 +626,11 @@ func rawChangeEACardCount(uuid string, i int) {
 		cardCollection[uuid] = c
 		nc := cardCollection[uuid]
 		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
-			Debug("true", fmt.Sprintf("[rawChangeEACardCount] New collection EA qty for '%v' is %v (modified by %v)\n", nc.name, nc.eaqty, i))
+			Debug("true", fmt.Sprintf("[rawChangeEACardCount] New collection EA qty for '%v' is %v (modified by %v)", nc.name, nc.eaqty, i))
 		}
 	} else {
 		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
-			Debug("true", fmt.Sprintf("INFO: [rawChangeEACardCount] No card with UUID of %v exists. Cannot change its quantity\n.", uuid))
+			Debug("true", fmt.Sprintf("INFO: [rawChangeEACardCount] No card with UUID of %v exists. Cannot change its quantity", uuid))
 		}
 	}
 }
@@ -1241,14 +1241,6 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 		if c, ok := cardCollection[uuid]; ok {
 			// Card exists.
 			// If we're loading card data, reset this to 0
-			if loadingCacheOrPriceData {
-				Debug(Config["debug_collection_update"], fmt.Sprintf("DEBUG: Setting count for %v to %v", uuid, count))
-				setCardCount(uuid, count)
-			} else {
-				// Now that that's out of the way, do a straight update
-				Debug(Config["debug_collection_update"], fmt.Sprintf("DEBUG: Incrementing count for %v by %v", uuid, count))
-				changeCardCount(uuid, count)
-			}
 			if flags == "ExtendedArt" {
 				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)", count, c.name, c.eaqty))
 				// changeEACardCount(uuid, count)
@@ -1258,10 +1250,19 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 					changeEACardCount(uuid, count)
 				}
 				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] EA count after update for %v is %v (after updating with count of %v)", c.name, c.eaqty, count))
-			}
-			if Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
-				Debug("true", fmt.Sprintf("[collectionOrInventoryEvent] Should be done updating [%s] %s (%v) {item: %v} with count of %d in collection", uuid, name, flags, thingNature, getCardCount(uuid)))
-				printCardInfo(c)
+			} else {
+				if loadingCacheOrPriceData {
+					Debug(Config["debug_collection_update"], fmt.Sprintf("DEBUG: Setting count for %v to %v", uuid, count))
+					setCardCount(uuid, count)
+				} else {
+					// Now that that's out of the way, do a straight update
+					Debug(Config["debug_collection_update"], fmt.Sprintf("DEBUG: Incrementing count for %v by %v", uuid, count))
+					changeCardCount(uuid, count)
+				}
+				if Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
+					Debug("true", fmt.Sprintf("[collectionOrInventoryEvent] Should be done updating [%s] %s (%v) {item: %v} with count of %d in collection", uuid, name, flags, thingNature, getCardCount(uuid)))
+					printCardInfo(c)
+				}
 			}
 		} else {
 			// Make up a bogus rarity
