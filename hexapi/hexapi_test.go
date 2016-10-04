@@ -1,6 +1,6 @@
 // Test cases for hexapi stuff
 
-package hexapi
+package main
 
 import "testing"
 
