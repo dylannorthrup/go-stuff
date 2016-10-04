@@ -1252,14 +1252,17 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 			if flags == "ExtendedArt" {
 				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)", count, c.name, c.eaqty))
 				// changeEACardCount(uuid, count)
-				setEACardCount(uuid, count)
+				if action == "Overwrite" {
+					setEACardCount(uuid, count)
+				} else {
+					changeEACardCount(uuid, count)
+				}
 				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] EA count after update for %v is %v (after updating with count of %v)", c.name, c.eaqty, count))
 			}
 			if Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
 				Debug("true", fmt.Sprintf("[collectionOrInventoryEvent] Should be done updating [%s] %s (%v) {item: %v} with count of %d in collection", uuid, name, flags, thingNature, getCardCount(uuid)))
 				printCardInfo(c)
 			}
-
 		} else {
 			// Make up a bogus rarity
 			rarity := "?"
