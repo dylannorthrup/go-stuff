@@ -1,33 +1,20 @@
-package main
+// Copyright 2011 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
-import (
-	"fmt"
-	"time"
-)
+// Package errors implements functions to manipulate errors.
+package errors
 
-// New struct to represent an error
-type MyError struct {
-	When time.Time
-	What string
+// New returns an error that formats as the given text.
+func New(text string) error {
+	return &errorString{text}
 }
 
-// Stringer for MyError
-func (e *MyError) Error() string {
-	return fmt.Sprintf("at %v, %s",
-		e.When, e.What)
+// errorString is a trivial implementation of error.
+type errorString struct {
+	s string
 }
 
-// Like the Stringer interface, fmt looks for errors as well
-// This is an example of a function that returns an error
-func run() error {
-	return &MyError{
-		time.Now(),
-		"it didn't work",
-	}
-}
-
-func main() {
-	if err := run(); err != nil {
-		fmt.Println(err)
-	}
+func (e *errorString) Error() string {
+	return e.s
 }
