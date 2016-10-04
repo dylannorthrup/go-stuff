@@ -512,6 +512,21 @@ func showGameState() {
 	fmt.Printf("!!!showGameState: p2: %v\n", currentGame.p2)
 }
 
+// Debug .... Util function for printing debug output
+func Debug(flag string, format string, a ...interface{}) {
+	// If our flag isn't set to the string "true", do not do the debug printing
+	if flag != "true" {
+		return
+	}
+	// Stolen^WBorrowed from http://stackoverflow.com/questions/7052693/how-to-get-the-name-of-a-function-in-go
+	// _, file, line, _ := runtime.Caller(1)
+	_, _, line, _ := runtime.Caller(1)
+	info := fmt.Sprintf(format, a...)
+
+	// fmt.Printf("[DEBUG] %s:%d %v", file, line, info)
+	fmt.Printf("[DEBUG] LINE:%d %v\n", line, info)
+}
+
 // Modify card quantities
 func incrementCardCount(uuid string) {
 	changeCardCount(uuid, 1)
@@ -522,9 +537,14 @@ func decrementCardCount(uuid string) {
 func setCardCount(uuid string, i int) {
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
+		Debug(Config["debug_collection_update"], fmt.Sprintf("[setCardCount] Setting qty for '%v' to 0 (old qty %v)", c.name, c.qty))
 		c.qty = 0
+		Debug(Config["debug_collection_update"], fmt.Sprintf("[setCardCount] Qty for '%v' is now %v . . . Handing off to changeCardCount", c.name, c.qty))
 		changeCardCount(uuid, i)
 	}
+}
+func (c *Card) directlySetCardCount(i int) {
+	c.qty = i
 }
 func changeCardCount(uuid string, i int) {
 	// fmt.Println("Inside changeCardCount()")
@@ -544,65 +564,77 @@ func changeCardCount(uuid string, i int) {
 	}
 	// fmt.Println("No draft cards for this type. Handing off to rawChangeCardCount")
 	// if not, go ahead and call the dangerous function
-	if Config["debug_collection_update"] == "true" {
-		c := cardCollection[uuid]
-		fmt.Printf("INFO: [changeCardCount] Changing qty for '%v' by %v (old qty %v)\n", c.name, i, c.qty)
-	}
+	c := cardCollection[uuid]
+	Debug(Config["debug_collection_update"], fmt.Sprintf("[changeCardCount] Changing qty for '%v' by %v (old qty %v)", c.name, i, c.qty))
 	rawChangeCardCount(uuid, i)
-	if Config["debug_collection_update"] == "true" {
-		c := cardCollection[uuid]
-		fmt.Printf("INFO: [changeCardCount] New qty for '%v' is %v\n", c.name, c.qty)
-	}
+	Debug(Config["debug_collection_update"], fmt.Sprintf("[changeCardCount] New qty for '%v' is %v", c.name, c.qty))
 }
+
+// c.objRawChangeCardCount(i) : Changes qty for card 'c'
+func (c *Card) objRawChangeCardCount(i int) {
+	if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
+		fmt.Printf("INFO: [objRawChangeCardCount] New collection qty for '%v' {%v} is %v (modified by %v)\n", c.name, c.nature, c.qty, i)
+	}
+	c.qty = i
+}
+
+// Pass uuid of card and new qty and have it change it via c.objRawChangeCardCount(i)
 func rawChangeCardCount(uuid string, i int) {
 	// If the card is in the system, update it
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
-		c.qty += i
-		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
-			fmt.Printf("INFO: [rawChangeCardCount] New collection qty for '%v' {%v} is %v (modified by %v)\n", c.name, c.nature, c.qty, i)
-		}
+		Debug(Config["debug_collection_update"], fmt.Sprintf("[rawChangeCardCount] Card Quantity before change: %v", c.qty))
+		c.objRawChangeCardCount(i)
+		Debug(Config["debug_collection_update"], fmt.Sprintf("[rawChangeCardCount] Card Quantity after change: %v", c.qty))
 		cardCollection[uuid] = c
+		nc := cardCollection[uuid]
+		Debug(Config["debug_collection_update"], fmt.Sprintf("[rawChangeCardCount] Card Quantity after re-retrieving card info: %v", nc.qty))
+
 	} else {
 		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
 			fmt.Printf("INFO: [rawChangeCardCount] No card with UUID of %v exists. Cannot change its quantity\n.", uuid)
 		}
 	}
 }
+
+func (c *Card) setEACardCount(i int) {
+	c.eaqty = i
+}
 func setEACardCount(uuid string, i int) {
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.eaqty = 0
+		cardCollection[uuid] = c
 		changeEACardCount(uuid, i)
 	}
 }
+
 func changeEACardCount(uuid string, i int) {
 	// Skip the currentlyDrafting check because you won't get EA cards while drafting.
-	if Config["debug_collection_update"] == "true" {
-		c := cardCollection[uuid]
-		fmt.Printf("INFO: [changeCardCount] Changing EA qty for '%v' by %v (old qty %v)\n", c.name, i, c.eaqty)
-	}
+	c := cardCollection[uuid]
+	Debug(Config["debug_collection_update"], fmt.Sprintf("INFO: [changeEACardCount] Changing EA qty for '%v' by %v (old qty %v)", c.name, i, c.eaqty))
 	rawChangeEACardCount(uuid, i)
-	if Config["debug_collection_update"] == "true" {
-		c := cardCollection[uuid]
-		fmt.Printf("INFO: [changeCardCount] New EA qty for '%v' is %v\n", c.name, c.eaqty)
-	}
+	nc := cardCollection[uuid]
+	Debug(Config["debug_collection_update"], fmt.Sprintf("INFO: [changeEACardCount] New EA qty for '%v' is %v", nc.name, nc.eaqty))
 }
+
 func rawChangeEACardCount(uuid string, i int) {
 	// If the card is in the system, update it
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
 		c.eaqty += i
-		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
-			fmt.Printf("INFO: [rawChangeEACardCount] New collection EA qty for '%v' is %v (modified by %v)\n", c.name, c.eaqty, i)
-		}
 		cardCollection[uuid] = c
+		nc := cardCollection[uuid]
+		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
+			Debug("true", fmt.Sprintf("[rawChangeEACardCount] New collection EA qty for '%v' is %v (modified by %v)\n", nc.name, nc.eaqty, i))
+		}
 	} else {
 		if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" {
-			fmt.Printf("INFO: [rawChangeEACardCount] No card with UUID of %v exists. Cannot change its quantity\n.", uuid)
+			Debug("true", fmt.Sprintf("INFO: [rawChangeEACardCount] No card with UUID of %v exists. Cannot change its quantity\n.", uuid))
 		}
 	}
 }
+
 func incrementDraftCardsPicked(uuid string) {
 	changeDraftCardsCount(uuid, 1)
 }
@@ -680,6 +712,26 @@ func printCardInfo(c Card) {
 
 func getCardInfo(c Card) string {
 	return getCardInfoWithWheelInfo(c, 0)
+}
+
+// Default String method
+func (c *Card) String() string {
+	return c.InfoWithWheelInfo(0)
+}
+
+// InfoWithWheelInfo : Prints out information about the card
+func (c *Card) InfoWithWheelInfo(place int) string {
+	if place == 0 {
+		if Config["detailed_card_info"] == "true" {
+			return fmt.Sprintf("'[%v] %v' %v {nature: %v} [Qty: %v (%v EA)] - %vp and %vg", c.rarity, c.name, c.uuid, c.nature, c.qty, c.eaqty, c.plat, c.gold)
+		}
+		return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg", c.name, c.qty, c.eaqty, c.plat, c.gold)
+	}
+	if Config["detailed_card_info"] == "true" {
+		return fmt.Sprintf("'[%v] %v' %v {nature: %v} [Qty: %v (%v EA)] - %vp and %vg", c.rarity, c.name, c.uuid, c.nature, c.qty, c.eaqty, c.plat, c.gold)
+		// return fmt.Sprintf("'[%v] %v' %v [Qty: %v (%v EA)] - %vp and %vg %3d%%", c.rarity, c.name, c.uuid, c.qty, c.eaqty, c.plat, c.gold, c.wiw[place])
+	}
+	return fmt.Sprintf("'%v' [Qty: %v (%v EA)] - %vp and %vg - %3d%% likely to wheel", c.name, c.qty, c.eaqty, c.plat, c.gold, c.wiw[place])
 }
 
 func getCardInfoWithWheelInfo(c Card, place int) string {
@@ -1139,12 +1191,10 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 		thingNature = "Unknown"
 	}
 	if Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
-		fmt.Printf("Message: %v\tAction: %v\tthingNature: %v\n", message, action, thingNature)
+		Debug("true", fmt.Sprintf("Message: %v\tAction: %v\tthingNature: %v\n", message, action, thingNature))
 	}
 	if action == "Overwrite" {
-		if Config["debug_collection_update"] == "true" {
-			fmt.Printf("Got an Overwrite Collection message. Doing full update of card collection for %v.\n", message)
-		}
+		Debug(Config["debug_collection_update"], fmt.Sprintf("Got an Overwrite Collection message. Doing full update of card collection for %v.\n", message))
 		// If this is an Overwrite message, first thing we do is reset counts on all cards
 		//for k, v := range cardCollection {
 		//  //      zeroItem  notZeroItem
@@ -1187,27 +1237,27 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 		if uuid == "00000000-0000-0000-0000-000000000000" {
 			continue
 		}
-		if Config["debug_item_updates"] == "true" {
-			fmt.Printf("%v {item: %v} : [%v] %v\n", count, thingNature, uuid, name)
-		}
-		if _, ok := cardCollection[uuid]; ok {
-			// Card exists. Do a straight update
-			changeCardCount(uuid, count)
+		Debug(Config["debug_item_updates"], fmt.Sprintf("%v {item: %v} : [%v] %v\n", count, thingNature, uuid, name))
+		if c, ok := cardCollection[uuid]; ok {
+			// Card exists.
+			// If we're loading card data, reset this to 0
+			if loadingCacheOrPriceData {
+				Debug(Config["debug_collection_update"], fmt.Sprintf("DEBUG: Setting count for %v to %v", uuid, count))
+				setCardCount(uuid, count)
+			} else {
+				// Now that that's out of the way, do a straight update
+				Debug(Config["debug_collection_update"], fmt.Sprintf("DEBUG: Incrementing count for %v by %v", uuid, count))
+				changeCardCount(uuid, count)
+			}
 			if flags == "ExtendedArt" {
-				if Config["debug_ea_counts"] == "true" {
-					c := cardCollection[uuid]
-					fmt.Printf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)\n", count, c.name, c.qty)
-				}
-				changeEACardCount(uuid, count)
-				if Config["debug_ea_counts"] == "true" {
-					c := cardCollection[uuid]
-					fmt.Printf("[collectionOrInventoryEvent] EA count after update for %v is %v (after updating with count of %v)\n", c.name, c.qty, count)
-				}
+				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)", count, c.name, c.eaqty))
+				// changeEACardCount(uuid, count)
+				setEACardCount(uuid, count)
+				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] EA count after update for %v is %v (after updating with count of %v)", c.name, c.eaqty, count))
 			}
 			if Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
-				fmt.Printf("INFO: [collectionOrInventoryEvent] Adding [%s] %s (%v) {item: %v} for count of %d in collection\n", uuid, name, flags, thingNature, getCardCount(uuid))
-				cc := cardCollection[uuid]
-				printCardInfo(cc)
+				Debug("true", fmt.Sprintf("[collectionOrInventoryEvent] Should be done updating [%s] %s (%v) {item: %v} with count of %d in collection", uuid, name, flags, thingNature, getCardCount(uuid)))
+				printCardInfo(c)
 			}
 
 		} else {
@@ -1231,18 +1281,14 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 			c := Card{name: name, uuid: uuid, plat: 1, gold: 1, rarity: rarity, qty: count, nature: thingNature}
 			cardCollection[uuid] = c
 			if flags == "ExtendedArt" {
-				if Config["debug_ea_counts"] == "true" {
-					c := cardCollection[uuid]
-					fmt.Printf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)\n", count, c.name, c.qty)
-				}
+				c := cardCollection[uuid]
+				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)\n", count, c.name, c.qty))
 				changeEACardCount(uuid, count)
-				if Config["debug_ea_counts"] == "true" {
-					c := cardCollection[uuid]
-					fmt.Printf("[collectionOrInventoryEvent] EA count after update for %v is %v (after updating with count of %v)\n", c.name, c.qty, count)
-				}
+				nc := cardCollection[uuid]
+				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] EA count after update for %v is %v (after updating with count of %v)\n", nc.name, nc.qty, count))
 			}
 			if Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
-				fmt.Printf("INFO: [collectionOrInventoryEvent] Adding [%s] %s (%v) {item: %v} for count of %d in collection\n", uuid, name, flags, thingNature, getCardCount(uuid))
+				Debug("true", fmt.Sprintf("INFO: [collectionOrInventoryEvent] Adding [%s] %s (%v) {item: %v} for count of %d in collection\n", uuid, name, flags, thingNature, getCardCount(uuid)))
 				cc := cardCollection[uuid]
 				printCardInfo(cc)
 			}
@@ -1397,7 +1443,10 @@ func checkPlayerConfigured(fID interface{}) *Player {
 
 func valuesDiffer(a int, b int) bool {
 	if a != b {
-		fmt.Printf("Values differ: %d vs %d\n", a, b)
+		// Shut this up when we're running our test suite
+		if Config["running_test"] != "true" {
+			fmt.Printf("Values differ: %d vs %d\n", a, b)
+		}
 		return true
 	}
 	return false
