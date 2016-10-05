@@ -539,7 +539,9 @@ func setCardCount(uuid string, i int) {
 		c := cardCollection[uuid]
 		Debug(Config["debug_collection_update"], fmt.Sprintf("[setCardCount] Setting qty for '%v' to 0 (old qty %v)", c.name, c.qty))
 		c.qty = 0
-		Debug(Config["debug_collection_update"], fmt.Sprintf("[setCardCount] Qty for '%v' is now %v . . . Handing off to changeCardCount", c.name, c.qty))
+		cardCollection[uuid] = c
+		nc := cardCollection[uuid]
+		Debug(Config["debug_collection_update"], fmt.Sprintf("[setCardCount] Qty for '%v' is now %v . . . Handing off to changeCardCount", nc.name, nc.qty))
 		changeCardCount(uuid, i)
 	}
 }
@@ -565,15 +567,17 @@ func changeCardCount(uuid string, i int) {
 	// fmt.Println("No draft cards for this type. Handing off to rawChangeCardCount")
 	// if not, go ahead and call the dangerous function
 	c := cardCollection[uuid]
+	q := c.qty + i
 	Debug(Config["debug_collection_update"], fmt.Sprintf("[changeCardCount] Changing qty for '%v' by %v (old qty %v)", c.name, i, c.qty))
-	rawChangeCardCount(uuid, i)
-	Debug(Config["debug_collection_update"], fmt.Sprintf("[changeCardCount] New qty for '%v' is %v", c.name, c.qty))
+	rawChangeCardCount(uuid, q)
+	nc := cardCollection[uuid]
+	Debug(Config["debug_collection_update"], fmt.Sprintf("[changeCardCount] New qty for '%v' is %v", nc.name, nc.qty))
 }
 
 // c.objRawChangeCardCount(i) : Changes qty for card 'c'
 func (c *Card) objRawChangeCardCount(i int) {
 	if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
-		fmt.Printf("INFO: [objRawChangeCardCount] New collection qty for '%v' {%v} is %v (modified by %v)\n", c.name, c.nature, c.qty, i)
+		Debug("true", fmt.Sprintf("[objRawChangeCardCount] New collection qty for '%v' {%v} is %v (modified by %v)", c.name, c.nature, c.qty, i))
 	}
 	c.qty = i
 }
