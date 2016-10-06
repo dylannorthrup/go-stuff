@@ -1269,22 +1269,12 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 			// If we're loading card data, reset this to 0
 			if flags == "ExtendedArt" {
 				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)", count, c.name, c.eaqty))
-				// changeEACardCount(uuid, count)
-				if action == "Overwrite" {
-					setEACardCount(uuid, count)
-				} else {
-					changeEACardCount(uuid, count)
-				}
+				changeCardCount(uuid, count)
+				changeEACardCount(uuid, count)
 				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] EA count after update for %v is %v (after updating with count of %v)", c.name, c.eaqty, count))
 			} else {
-				if loadingCacheOrPriceData {
-					Debug(Config["debug_collection_update"], fmt.Sprintf("DEBUG: Setting count for %v to %v", uuid, count))
-					setCardCount(uuid, count)
-				} else {
-					// Now that that's out of the way, do a straight update
-					Debug(Config["debug_collection_update"], fmt.Sprintf("DEBUG: Incrementing count for %v by %v", uuid, count))
-					changeCardCount(uuid, count)
-				}
+				Debug(Config["debug_collection_update"], fmt.Sprintf("[collectionOrInventoryEvent] Sending off non-EA count of %v for %v (which was %v before updating)", count, c.name, c.eaqty))
+				changeCardCount(uuid, count)
 				if Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
 					Debug("true", fmt.Sprintf("[collectionOrInventoryEvent] Should be done updating [%s] %s (%v) {item: %v} with count of %d in collection", uuid, name, flags, thingNature, getCardCount(uuid)))
 					printCardInfo(c)
