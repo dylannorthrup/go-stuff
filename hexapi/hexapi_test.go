@@ -118,3 +118,20 @@ func TestEARawChangeCardCount(t *testing.T) {
 
 	}
 }
+
+func TestNatureTranslation(t *testing.T) {
+	for _, a := range []struct {
+		given string
+		want  string
+	}{
+		{"Equipment", "Inventory"},
+		{"Card", "Card"},
+		{"FooBar", "Unknown"},
+		{"", "Unknown"},
+	} {
+		got := translateCardNature(a.given)
+		if got != a.want {
+			t.Errorf("translateCardNature(%v) == %v but we expected %v\n", a.given, got, a.want)
+		}
+	}
+}
