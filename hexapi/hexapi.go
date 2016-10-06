@@ -662,11 +662,31 @@ func changeDraftCardsCount(uuid string, i int) {
 	// Call the rawChangeCardCount function here so we have one stop shopping for Draft func calls
 	// rawChangeCardCount(uuid, i)
 }
+
+// setNature ... set the nature of this card
+func (c *Card) setNature(n string) {
+	c.nature = n
+}
+
 func setCardNature(uuid string, n string) {
 	if _, ok := cardCollection[uuid]; ok {
 		c := cardCollection[uuid]
+		Debug(Config["debug_card_nature"], fmt.Sprintf("[setCardNature] pre change %v has nature of %v", c.name, c.nature))
 		c.nature = n
 		cardCollection[uuid] = c
+		nc := cardCollection[uuid]
+		Debug(Config["debug_card_nature"], fmt.Sprintf("[setCardNature] post change %v has nature of %v", nc.name, nc.nature))
+	}
+}
+
+func translateCardNature(n string) string {
+	switch n {
+	case "Equipment":
+		return "Inventory"
+	case "Card":
+		return "Card"
+	default:
+		return "Unknown"
 	}
 }
 
@@ -1200,20 +1220,20 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 	if action == "Overwrite" {
 		Debug(Config["debug_collection_update"], fmt.Sprintf("Got an Overwrite Collection message. Doing full update of card collection for %v.\n", message))
 		// If this is an Overwrite message, first thing we do is reset counts on all cards
-		//for k, v := range cardCollection {
-		//  //      zeroItem  notZeroItem
-		//  // item     Y         N
-		//  // card     N         Y
-		//  if v.nature == thingNature {
-		//    if Config["debug_item_updates"] == "true" {
-		//      fmt.Printf("Doing Zero for %v (%v) with thingNature set to %v\n", v.name, v.nature, thingNature)
-		//      // time.Sleep(time.Second)
-		//    }
-		//    v.qty = 0
-		//    v.eaqty = 0
-		//    cardCollection[k] = v
-		//  }
-		//}
+		for k, v := range cardCollection {
+			//      zeroItem  notZeroItem
+			// item     Y         N
+			// card     N         Y
+			if v.nature == thingNature {
+				if Config["debug_item_updates"] == "true" {
+					fmt.Printf("Doing Zero for %v (%v) with thingNature set to %v\n", v.name, v.nature, thingNature)
+					// time.Sleep(time.Second)
+				}
+				v.qty = 0
+				v.eaqty = 0
+				cardCollection[k] = v
+			}
+		}
 		// Also, turn off update printing to reduce spamming of the screen.
 		loadingCacheOrPriceData = true
 		// Finally, set up 'added' to be what's in the 'Complete' JSON array
@@ -1244,6 +1264,8 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 		Debug(Config["debug_item_updates"], fmt.Sprintf("%v {item: %v} : [%v] %v\n", count, thingNature, uuid, name))
 		if c, ok := cardCollection[uuid]; ok {
 			// Card exists.
+			// Make sure the nature is correct
+			setCardNature(uuid, thingNature)
 			// If we're loading card data, reset this to 0
 			if flags == "ExtendedArt" {
 				Debug(Config["debug_ea_counts"], fmt.Sprintf("[collectionOrInventoryEvent] Sending off EA count of %v for %v (which was %v before updating)", count, c.name, c.eaqty))
@@ -1286,7 +1308,8 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 			}
 			// If we don't have pricing, set plat and gold to 1. Also, set qty to 1 so we don't have
 			// to do an 'incrementCardCount(uuid) afterward.
-			c := Card{name: name, uuid: uuid, plat: 1, gold: 1, rarity: rarity, qty: count, nature: thingNature}
+			c := Card{name: name, uuid: uuid, plat: 1, gold: 1, rarity: rarity, qty: count}
+			c.setNature(thingNature)
 			cardCollection[uuid] = c
 			if flags == "ExtendedArt" {
 				c := cardCollection[uuid]
@@ -2037,7 +2060,9 @@ func getCardPriceInfo() {
 		var nature string
 
 		// Reduce the spamminess of loading collection info
-		loadingCacheOrPriceData = true
+		if Config["debug_price_updates"] != "true" {
+			loadingCacheOrPriceData = true
+		}
 
 		for _, card := range cards[:] {
 			c = card.(map[string]interface{})
@@ -2047,7 +2072,7 @@ func getCardPriceInfo() {
 			}
 			// Assign our variables from the interface derived from our JSON blob
 			name = c["name"].(string)
-			nature = c["type"].(string)
+			nature = translateCardNature(c["type"].(string))
 			fullRarity = c["rarity"].(string)
 			if len(fullRarity) > 0 {
 				rarity = fullRarity[:1]
@@ -2061,6 +2086,7 @@ func getCardPriceInfo() {
 			gold = int(g["avg"].(float64))
 			dpc = c["draft_pct_chances"].(map[string]interface{})
 			tempDpc := [18]int{0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+			Debug(Config["debug_price_updates"], fmt.Sprintf("Adding %v [%v] {%v} %vp - %vg", name, rarity, nature, plat, gold))
 
 			// fmt.Printf("Working on '%v'\nName is '%v', rarity is %v and uuid is %v and avg plat of %v and avg gold of %v\n", card, name, rarity, uuid, plat, gold)
 			// If we've already got a card with that UUID in the cardCollection, update the info
@@ -2104,7 +2130,7 @@ func getCardPriceInfo() {
 				cardCollection[uuid] = c
 			} else {
 				// If it doesn't exist, create a new card with appropriate values and add it to the map
-				c := Card{name: name, uuid: uuid, plat: plat, gold: gold, rarity: rarity, wiw: tempDpc}
+				c := Card{name: name, uuid: uuid, plat: plat, gold: gold, rarity: rarity, wiw: tempDpc, nature: nature}
 				if dpc["9"] != nil {
 					c.wiw[9] = floatToInt(dpc["9"].(float64))
 				}
@@ -2136,6 +2162,9 @@ func getCardPriceInfo() {
 				// And update our name to uuid map
 				ntum[name] = uuid
 			}
+			nc := cardCollection[uuid]
+			Debug(Config["debug_price_updates"], fmt.Sprintf("Added  %v [%v] {%v} %vp - %vg", nc.name, nc.rarity, nc.nature, nc.plat, nc.gold))
+
 		}
 
 		// Now, turn back on info messages for changes in card counts
