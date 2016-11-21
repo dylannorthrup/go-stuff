@@ -567,19 +567,20 @@ func changeCardCount(uuid string, i int) {
 	// fmt.Println("No draft cards for this type. Handing off to rawChangeCardCount")
 	// if not, go ahead and call the dangerous function
 	c := cardCollection[uuid]
-	q := c.qty + i
+	// q := c.qty + i
 	Debug(Config["debug_collection_update"], fmt.Sprintf("[changeCardCount] Changing qty for '%v' by %v (old qty %v)", c.name, i, c.qty))
-	rawChangeCardCount(uuid, q)
+	// rawChangeCardCount(uuid, q)
+	rawChangeCardCount(uuid, i)
 	nc := cardCollection[uuid]
 	Debug(Config["debug_collection_update"], fmt.Sprintf("[changeCardCount] New qty for '%v' is %v", nc.name, nc.qty))
 }
 
 // c.objRawChangeCardCount(i) : Changes qty for card 'c'
 func (c *Card) objRawChangeCardCount(i int) {
+	c.qty += i
 	if (loadingCacheOrPriceData == false && Config["show_collection_quantity_changes"] == "true") || Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
 		Debug("true", fmt.Sprintf("[objRawChangeCardCount] New collection qty for '%v' {%v} is %v (modified by %v)", c.name, c.nature, c.qty, i))
 	}
-	c.qty = i
 }
 
 // Pass uuid of card and new qty and have it change it via c.objRawChangeCardCount(i)
@@ -685,6 +686,8 @@ func translateCardNature(n string) string {
 		return "Inventory"
 	case "Card":
 		return "Card"
+	case "Mercenary":
+		return "Mercenary"
 	default:
 		return "Unknown"
 	}
@@ -1215,7 +1218,7 @@ func collectionOrInventoryEvent(f map[string]interface{}) {
 		thingNature = "Unknown"
 	}
 	if Config["debug_collection_update"] == "true" || Config["debug_item_updates"] == "true" {
-		Debug("true", fmt.Sprintf("Message: %v\tAction: %v\tthingNature: %v\n", message, action, thingNature))
+		Debug("true", fmt.Sprintf("Message: %v\tAction: %v\tthingNature: %v", message, action, thingNature))
 	}
 	if action == "Overwrite" {
 		Debug(Config["debug_collection_update"], fmt.Sprintf("Got an Overwrite Collection message. Doing full update of card collection for %v.\n", message))
@@ -1562,7 +1565,7 @@ func ladderEvent(f map[string]interface{}) {
 	if division == 4 {
 		fmt.Printf("Your %s Cosmic Rank is %v\n", ladderType, cosmicRank)
 	} else {
-		fmt.Printf("Your %s ladder rank is %v %v\n ", ladderType, divisionName, tier)
+		fmt.Printf("Your %s ladder rank is %v %v\n", ladderType, divisionName, tier)
 	}
 }
 
@@ -2076,7 +2079,7 @@ func getCardPriceInfo() {
 			gold = int(g["avg"].(float64))
 			dpc = c["draft_pct_chances"].(map[string]interface{})
 			tempDpc := [18]int{0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-			Debug(Config["debug_price_updates"], fmt.Sprintf("Adding %v [%v] {%v} %vp - %vg", name, rarity, nature, plat, gold))
+			Debug(Config["debug_price_updates"], fmt.Sprintf("Adding %v [%v] <%v> {%v} %vp - %vg", name, rarity, fullRarity, nature, plat, gold))
 
 			// fmt.Printf("Working on '%v'\nName is '%v', rarity is %v and uuid is %v and avg plat of %v and avg gold of %v\n", card, name, rarity, uuid, plat, gold)
 			// If we've already got a card with that UUID in the cardCollection, update the info
